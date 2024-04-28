@@ -14,9 +14,9 @@ hs.spaces.setDefaultMCwaitTime()
 all_info = {}
 mode = "verbose"
 --mode = "quiet"
-pause = 1
+pause = 0.5
 
-local function retrieveDesktopEntities(entity,mode)
+local function retrieveDesktopEntities(entity, mode)
     local all_entities
     if entity == "spaces" then
         all_entities = hs.spaces.allSpaces()
@@ -24,6 +24,10 @@ local function retrieveDesktopEntities(entity,mode)
     elseif entity == "windows" then
         all_entities = hs.window.allWindows()
         --all_entities = hs.window.orderedWindows()
+    elseif entity == "visible" then
+        all_entities = hs.window.visibleWindows()
+    else
+        hs.showError("Unknown entity: " .. entity)
     end
 
     if mode ==  "verbose" then
@@ -77,7 +81,34 @@ local function processFile(case, all_info)
     return all_info
 end
 
+local function isTile(side, window)
+    local frame = window:frame()
+    local screen_frame = window:screen():frame()
+    if side == "left" then
+        return frame.x == 0 and frame.w == screen_frame.w / 2
+    elseif side == "right" then
+        return frame.x == screen_frame.w / 2 and frame.w == screen_frame.w / 2
+    else
+        hs.showError("Unknown side: " .. side)
+        return nil
+    end
+end
+
+local function setTile(side, window)
+    local screen_frame = window:screen():frame()
+    if side == "left" then
+        window:setFrame({x=0, y=0, w=screen_frame.w / 2, h=screen_frame.h})
+    elseif side == "right" then
+        window:setFrame({x=screen_frame.w / 2, y=0, w=screen_frame.w / 2, h=screen_frame.h})
+    else
+        hs.showError("Unknown side: " .. side)
+        return nil
+    end
+end
+
 local function saveWindowPositions()
+    initial_space = hs.spaces.activeSpaceOnScreen()
+
     local all_spaces = retrieveDesktopEntities("spaces",mode)
     local all_windows = retrieveDesktopEntities("windows",mode)
     local info = {}
@@ -87,64 +118,65 @@ local function saveWindowPositions()
         hs.spaces.gotoSpace(space)
         hs.timer.usleep(1e6 * pause)
         
-        space_windows = hs.window.visibleWindows()
-        print("space_windows: " .. hs.inspect(space_windows))
-
-        for _, window in ipairs(all_windows) do
-            local window_spaces = hs.spaces.windowSpaces(window:id())
-            --print("window_spaces: " .. hs.inspect(window_spaces))
-
+        local space_windows = retrieveDesktopEntities("visible",mode)
+        for _, window in ipairs(space_windows) do
             info = {}
-            if hs.fnutils.contains(window_spaces, space) then
-                local id = tostring(window:id())
+            local id = tostring(window:id())
 
-                info["title"] = window:title()
-                info["app"] = window:application():name()
-                info["minimized"] = window:isMinimized()
-                if not minimized then
-                    local frame = window:frame()
-                    info["space"] = space
-                    info["frame"] = {
-                        ["x"] = frame.x, 
-                        ["y"] = frame.y,
-                        ["w"] = frame.w,
-                        ["h"] = frame.h,
-                    }
-                end
-                all_info[id] = info
-                print("info: " .. hs.inspect(info))
+            info["title"] = window:title()
+            info["app"] = window:application():name()
+            if window:isFullScreen() then
+                info["fullscreen"] = "yes"
+            elseif isTile("left", window) then
+                info["fullscreen"] = "left"
+            elseif isTile("right", window) then
+                info["fullscreen"] = "right"
+            else
+                local frame = window:frame()
+                info["fullscreen"] = "no"
+                info["space"] = space
+                info["frame"] = {
+                    ["x"] = frame.x, 
+                    ["y"] = frame.y,
+                    ["w"] = frame.w,
+                    ["h"] = frame.h,
+                }
             end
-
+            all_info[id] = info
+            print("info: " .. hs.inspect(info))
         end
-        
     end
     all_info = processFile("write", all_info)
+
     notifyUser("save")
+    hs.spaces.gotoSpace(initial_space)
 end
 
 local function applyWindowPositions()
+    initial_space = hs.spaces.activeSpaceOnScreen()
+
     all_info = processFile("read", all_info)
     local all_spaces = retrieveDesktopEntities("spaces",mode)
     local all_windows = retrieveDesktopEntities("windows",mode)
-
+    
     for _, space in ipairs(all_spaces) do
         hs.spaces.gotoSpace(space)
         hs.timer.usleep(1e6 * pause)
-        for _, window in ipairs(all_windows) do
+
+        local space_windows = retrieveDesktopEntities("visible",mode)
+        for _, window in ipairs(space_windows) do
             local id = tostring(window:id())
 
             if all_info[id] then
-                --local saved_space = all_info[id]["space"]
-                local saved_minimized = all_info[id]["minimized"]
+                local saved_fullscreen = all_info[id]["fullscreen"]
 
-                --local check_space = hs.fnutils.contains(
-                --    saved_space_ids,
-                --    space
-                --)
-                --local check_minimized = not saved_minimized
-
-                --if check_minimized and check_space then
-                if not saved_minimized then    
+                if saved_fullscreen == "yes" then    
+                    window:setFullScreen(true)
+                elseif saved_fullscreen == "left" then
+                    setTile("left", window)
+                elseif saved_fullscreen == "right" then
+                    setTile("right", window)
+                else
                     local saved_frame = all_info[id]["frame"]
                     local frame = window:frame()
                     frame.x = saved_frame["x"]
@@ -156,14 +188,16 @@ local function applyWindowPositions()
                     local saved_space = all_info[id]["space"]
                     hs.spaces.moveWindowToSpace(
                         tonumber(id),
-                        saved_space[1]
+                        saved_space
                     )
                 end
+            else
+                window:minimize()
             end
-
         end
     end
     notifyUser("apply")
+    hs.spaces.gotoSpace(initial_space)
 end
 
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", saveWindowPositions)
