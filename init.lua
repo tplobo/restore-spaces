@@ -12,9 +12,9 @@ hs.spaces.setDefaultMCwaitTime()
 
 -- Global variables
 all_info = {}
-mode = "verbose"
---mode = "quiet"
-pause = 0.5
+--mode = "verbose"
+mode = "quiet"
+pause = 0.3 -- in seconds (less than 0.3 is too fast)
 
 local function retrieveDesktopEntities(entity, mode)
     local all_entities
@@ -60,19 +60,14 @@ end
 local function processFile(case, all_info)
     local json_contents
     local file
+    file_name = os.getenv('HOME') .. '/.hammerspoon/info_spaces.json'
     if case == "write" then
-        file = io.open(
-            os.getenv('HOME') .. '/.hammerspoon/info_windows.json',
-            'w'
-        )
+        file = io.open(file_name,'w')
         json_contents = hs.json.encode(all_info, true) -- true: prettyprint
         file:write(json_contents)
 
     elseif case == "read" then
-        file = io.open(
-            os.getenv('HOME') .. '/.hammerspoon/info_windows.json',
-            'r'
-        )
+        file = io.open(file_name,'r')
         json_contents = file:read('*all')
         all_info = hs.json.decode(json_contents)
 
@@ -106,7 +101,7 @@ local function setTile(side, window)
     end
 end
 
-local function saveWindowPositions()
+local function saveSpacesStates()
     initial_space = hs.spaces.activeSpaceOnScreen()
 
     local all_spaces = retrieveDesktopEntities("spaces",mode)
@@ -125,6 +120,7 @@ local function saveWindowPositions()
 
             info["title"] = window:title()
             info["app"] = window:application():name()
+            info["space"] = space
             if window:isFullScreen() then
                 info["fullscreen"] = "yes"
             elseif isTile("left", window) then
@@ -134,7 +130,6 @@ local function saveWindowPositions()
             else
                 local frame = window:frame()
                 info["fullscreen"] = "no"
-                info["space"] = space
                 info["frame"] = {
                     ["x"] = frame.x, 
                     ["y"] = frame.y,
@@ -152,7 +147,7 @@ local function saveWindowPositions()
     hs.spaces.gotoSpace(initial_space)
 end
 
-local function applyWindowPositions()
+local function applySpacesStates()
     initial_space = hs.spaces.activeSpaceOnScreen()
 
     all_info = processFile("read", all_info)
@@ -168,8 +163,13 @@ local function applyWindowPositions()
             local id = tostring(window:id())
 
             if all_info[id] then
-                local saved_fullscreen = all_info[id]["fullscreen"]
+                local saved_space = all_info[id]["space"]
+                hs.spaces.moveWindowToSpace(
+                    tonumber(id),
+                    saved_space
+                )
 
+                local saved_fullscreen = all_info[id]["fullscreen"]
                 if saved_fullscreen == "yes" then    
                     window:setFullScreen(true)
                 elseif saved_fullscreen == "left" then
@@ -184,12 +184,6 @@ local function applyWindowPositions()
                     frame.w = saved_frame["w"]
                     frame.h = saved_frame["h"]
                     window:setFrame(frame)
-
-                    local saved_space = all_info[id]["space"]
-                    hs.spaces.moveWindowToSpace(
-                        tonumber(id),
-                        saved_space
-                    )
                 end
             else
                 window:minimize()
@@ -200,5 +194,5 @@ local function applyWindowPositions()
     hs.spaces.gotoSpace(initial_space)
 end
 
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", saveWindowPositions)
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", applyWindowPositions)
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", saveSpacesStates)
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", applySpacesStates)
