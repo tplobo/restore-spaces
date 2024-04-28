@@ -1,24 +1,31 @@
-# restore-spaces
+# Hammerspoon Module: restore-spaces
 
 Hammerspoon implementation to restore organization of windows throughout
 spaces on MacOS.
 
 ## Installation
 
-1. Install [spaces module](https://github.com/asmagill/hs._asm.spaces)
+1. If you do not have [**Homebrew**](https://brew.sh) yet, install it and
+   install [Hammerspoon](https://www.hammerspoon.org) for Mac automation:
+
+```
+brew install --cask hammerspoon
+```
+
+2. Install the [spaces module](https://github.com/asmagill/hs._asm.spaces)
    for Hammerspoon:
 
 - Download `spaces-v0.x-universal.tar.gz`
-- Place it in your `.hammerspoon` folder and extract it:
+- Place the file in your `.hammerspoon` folder and extract it:
 
 ```
 cd ~/.hammerspoon
 tar -xzf ~/Downloads/spaces-v0.x.tar.gz
 ```
 
-2. Copy the `restore_spaces.lua` module into your `.hammerspoon` folder.
+3. Copy the `restore_spaces.lua` module into your `.hammerspoon` folder.
 
-3. Copy the `init.lua` file into your `.hammerspoon` folder, or import the
+4. Copy the `init.lua` file into your `.hammerspoon` folder, or import the
    module and set your preferred configurations and hotkey combinations in your
    own `.hammerspoon/init.lua` file to avoid conflicts with other modules, for
    example:
@@ -33,15 +40,15 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", restore_spaces.saveSpacesStates)
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applySpacesStates)
 ```
 
-4. Open the Hammerspoon app and select `Reload Config`.
+5. Open the Hammerspoon app and select `Reload Config`.
 
 ## Usage
 
-1. Press "save" hotkey combination to save current state.
+1. Press the "save" hotkey combination to save current state.
 
    _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>S</kbd>
 
-2. Press "apply" hotkey combination to restore that state.
+2. Press the "apply" hotkey combination to restore that state.
 
    _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>A</kbd>
 
