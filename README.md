@@ -39,8 +39,19 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applySpacesStates)
 
 1. Press "save" hotkey combination to save current state.
 
-   <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>S</kbd>
+   _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>S</kbd>
 
 2. Press "apply" hotkey combination to restore that state.
 
-   <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>A</kbd>
+   _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>A</kbd>
+
+## Development
+
+Current features under development; any help is appreciated:
+
+- Fix restore for two windows in Fullscreen, Tile left and Tile right, which
+  current does not work (afaik, cannot be implemented).
+- Add functionality for multiple monitors (_e.g._ move space to other monitor).
+- Set multiple save-state JSON files, for different work environments (_e.g._
+  office and home office), based on the list of monitors connected to Mac.
+- ...
