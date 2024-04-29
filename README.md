@@ -40,7 +40,8 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", restore_spaces.saveSpacesStates)
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applySpacesStates)
 ```
 
-5. Open the Hammerspoon app and select `Reload Config`.
+5. Open the Hammerspoon app, enable it in Accessibility, restart it and select
+   `Reload Config`.
 
 ## Usage
 
