@@ -31,17 +31,32 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    example:
 
 ```
-local restore_spaces = require 'restore_spaces'
+local hs = {}
+hs.hotkey = require "hs.hotkey"
+hs.restore_spaces = require 'restore_spaces'
 
-restore_spaces.mode = "quiet"
-restore_spaces.pause = 0.3
+-- Configure 'restore_spaces'
+hs.restore_spaces.mode = "quiet"
+hs.restore_spaces.space_pause = 0.3
+hs.restore_spaces.screen_pause = 0.4
 
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", restore_spaces.saveSpacesStates)
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applySpacesStates)
+-- Bind hotkeys for 'restore_spaces'
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "D", hs.restore_spaces.detectEnvironment)
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveState)
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
 ```
 
 5. Open the Hammerspoon app, enable it in Accessibility, restart it and select
    `Reload Config`.
+
+6. Run the commands a few times to check whether the `space_pause` and
+   `screen_pause` settings comply with your mac. They might need to be
+   increased if the console issues:
+   ```
+   ... attempt to index a nil value (local 'child')
+    stack traceback:
+   ...: in function 'hs.spaces.gotoSpace' ...
+   ```
 
 ## Usage
 
@@ -55,11 +70,24 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applySpacesStates)
 
 ## Development
 
+Following features have already been implemented:
+
+- Add functionality for multiple monitors (_e.g._ move space to other monitor).
+- Save JSON files with multiple save-state, for different work environments
+  (_e.g._ office and home office), based on the list of monitors connected to
+  Mac.
+- Ask name of environment when saving state for inclusion in JSON files.
+
 Current features under development; any help is appreciated:
 
+- Add a `notifyUser` call if `gotoSpace` fails due too short pause setting.
 - Fix restore for two windows in Fullscreen, Tile left and Tile right, which
   current does not work (afaik, cannot be implemented).
-- Add functionality for multiple monitors (_e.g._ move space to other monitor).
-- Set multiple save-state JSON files, for different work environments (_e.g._
-  office and home office), based on the list of monitors connected to Mac.
+- Ensure save/apply do not consider hidden windows.
+- Fix restore for when current number of screens is different than the number
+  of saved ones.
+- Ask if the name of new environment should overwrite an environment already
+  saved.
+- Check functionalities if/when space IDs change with space deletion/creation.
+- Add tests.
 - ...
