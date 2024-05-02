@@ -23,12 +23,17 @@ cd ~/.hammerspoon
 tar -xzf ~/Downloads/spaces-v0.x.tar.gz
 ```
 
-3. Copy the `restore_spaces.lua` module into your `.hammerspoon` folder.
+3. Run `install.sh` to copy both `init.lua` and `restore_spaces.lua` files
+   into your `.hammerspoon` folder:
 
-4. Copy the `init.lua` file into your `.hammerspoon` folder, or import the
-   module and set your preferred configurations and hotkey combinations in your
-   own `.hammerspoon/init.lua` file to avoid conflicts with other modules, for
-   example:
+   ```
+   zsh install.sh
+   ```
+
+   or just copy `restore_spaces.lua` and import the module in your own
+   `.hammerspoon/init.lua` file to avoid conflicts with other modules.
+
+4. Set your preferred configurations and hotkey combinations, for example:
 
 ```
 local hs = {}
