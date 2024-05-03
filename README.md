@@ -3,6 +3,12 @@
 Hammerspoon implementation to restore organization of windows throughout
 spaces on MacOS.
 
+## Comparisons
+- Better than [DisplayMaid](https://funk-isoft.com/display-maid.html) because
+  it cycles through every space to save the state of all of them.
+- Less resource-intensive than [Workspaces](https://www.apptorium.com/workspaces).
+- No need to disable SIP like [yabai](https://github.com/koekeishiya/yabai).
+
 ## Installation
 
 1. If you do not have [**Homebrew**](https://brew.sh) yet, install it and
