@@ -49,14 +49,27 @@ function mod.notifyUser(case,mode)
     hs.notify.new(message):send()
 end
 
-function mod.processDataFile(case, data)
-    local function openFile(abs_path, r_or_w)
-        local file = io.open(abs_path, r_or_w)
-        if not file and r_or_w == 'r' then
-            return nil
-        else
-            return file
+function mod.processDataInFile(case, data)
+    local function readFile(abs_path)
+        local file = io.open(abs_path, 'r')
+        if not file then
+            print("Failed to open file: " .. abs_path)
+            return {}
         end
+        local json_contents = file:read('*all')
+        file:close()
+        return hs.json.decode(json_contents)
+    end
+
+    local function writeFile(abs_path, contents)
+        local file = io.open(abs_path, 'w')
+        if not file then
+            print("Failed to open file: " .. abs_path)
+            return
+        end
+        local json_contents = hs.json.encode(contents, true) -- true: prettyprint
+        file:write(json_contents)
+        file:close()
     end
 
     local contents
@@ -71,27 +84,13 @@ function mod.processDataFile(case, data)
     local rel_path = '/.hammerspoon/' .. file_name .. '.json'
     local abs_path = os.getenv('HOME') .. rel_path
 
-    local file
-    local json_contents
     if case == "write" then
-        file = openFile(abs_path,'w')
-        json_contents = hs.json.encode(contents, true) -- true: prettyprint
-        file:write(json_contents)
+        writeFile(abs_path, contents)
     elseif case == "read" then
-        file = openFile(abs_path,'r')
-        if not file then
-            contents = {}
-        else
-            json_contents = file:read('*all')
-            contents = hs.json.decode(json_contents)
-        end
+        contents = readFile(abs_path)
     else
         error("Unknown case: " .. case)
     end
-    if file then
-        file:close()
-    end
-
     return contents
 end
 
@@ -115,7 +114,8 @@ function mod.askEnvironmentName(mode)
     return answer
 end
 
-function mod.retrieveDesktopEntities(entity, screen, mode)
+--TODO: rename to retrieveEnvironmentEntities
+function mod.retrieveEnvironmentEntities(entity, screen, mode)
     local function validateNil(arg)
         if not arg then
             return true
@@ -143,6 +143,7 @@ function mod.retrieveDesktopEntities(entity, screen, mode)
         all_entities = hs.screen.allScreens()
     elseif entity == "spaces" then
         validateScreen(screen)
+        --TODO: how to return only visible spaces?
         all_entities = hs.spaces.spacesForScreen(screen:id())
     elseif entity == "windows" then
         validateScreen(screen)
@@ -202,21 +203,21 @@ function mod.detectEnvironment()
         return a:frame().x < b:frame().x
     end
 
-    mod.data_envs = mod.processDataFile("read","environments")
+    mod.data_envs = mod.processDataInFile("read","environments")
     
-    local all_screens = mod.retrieveDesktopEntities("screens")
+    local all_screens = mod.retrieveEnvironmentEntities("screens")
     table.sort(all_screens, sortByFrame)
 
     local env = {}
     for index, screen in ipairs(all_screens) do
         local screen_name = screen:name()
-        local num_spaces = #hs.spaces.spacesForScreen(screen:id())
+        local screen_spaces = hs.spaces.spacesForScreen(screen:id())
         --TODO: store list of spaces instead of just number
         --TODO: what happens if space ids are not the same?
         local screen_index = tostring(index)
         env[screen_index] = {
             ["monitor"] = screen_name,
-            ["spaces"] = num_spaces
+            ["spaces"] = screen_spaces
         }
     end
 
@@ -259,7 +260,7 @@ function mod.detectEnvironment()
         end
     end
 
-    mod.data_envs = mod.processDataFile("write","environments")
+    mod.data_envs = mod.processDataInFile("write","environments")
     return env_name
 end
 
@@ -275,18 +276,18 @@ function mod.saveState()
         error("Undefined environment name!")
     end
 
-    mod.data_wins = mod.processDataFile("read","windows")
+    mod.data_wins = mod.processDataInFile("read","windows")
     if not mod.data_wins[env_name] then
         mod.data_wins[env_name] = {}
     end
 
-    local all_screens = mod.retrieveDesktopEntities("screens",nil)
+    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
     for _, screen in ipairs(all_screens) do
         local screen_id = tostring(screen:id())
 
         local initial_space = hs.spaces.activeSpaceOnScreen(screen)
-        local screen_spaces = mod.retrieveDesktopEntities("spaces", screen)
-        local screen_windows = mod.retrieveDesktopEntities("windows", screen)
+        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+        local screen_windows = mod.retrieveEnvironmentEntities("windows", screen)
 
         hs.timer.usleep(1e6 * mod.screen_pause)
         for _, space in pairs(screen_spaces) do
@@ -297,7 +298,7 @@ function mod.saveState()
             hs.spaces.gotoSpace(space)
             hs.timer.usleep(1e6 * mod.space_pause)
             
-            local space_windows = mod.retrieveDesktopEntities("visible", screen)
+            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
             for _, window in ipairs(space_windows) do
                 local window_info = {}
                 local window_id = tostring(window:id())
@@ -325,11 +326,12 @@ function mod.saveState()
                     }
                 end
                 mod.data_wins[env_name][window_id] = window_info
+                print(hs.inspect(window_info))
             end
         end
         hs.spaces.gotoSpace(initial_space)
     end
-    mod.data_wins = mod.processDataFile("write","windows")
+    mod.data_wins = mod.processDataInFile("write","windows")
     mod.notifyUser("save")
 end
 
@@ -339,19 +341,23 @@ function mod.applyState()
         error("Undefined environment name!")
     end
 
-    --TODO: build environment to ensure every space id exists!
+    --TODO: build environment to ensure every space id exists or has an
+    --      equivalent, by creating a mapping between old and new space
+    --      ids and save it in the environment JSON
+    --TODO: open apps if they are not open
+    --TODO: close apps if they are not saved?
 
-    mod.data_wins = mod.processDataFile("read","windows")
+    mod.data_wins = mod.processDataInFile("read","windows")
     if not mod.data_wins[env_name] then
         error("State for environment has never been saved!")
     end
     local env_info = mod.data_wins[env_name]
 
-    local all_screens = mod.retrieveDesktopEntities("screens",nil)
+    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
     for _, screen in ipairs(all_screens) do
         local screen_id = tostring(screen:id())
         local initial_space = hs.spaces.activeSpaceOnScreen(screen)
-        local screen_spaces = mod.retrieveDesktopEntities("spaces", screen)
+        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
 
         hs.timer.usleep(1e6 * mod.screen_pause)
         for _, space in pairs(screen_spaces) do
@@ -362,7 +368,7 @@ function mod.applyState()
             hs.spaces.gotoSpace(space)
             hs.timer.usleep(1e6 * mod.space_pause)
 
-            local space_windows = mod.retrieveDesktopEntities("visible", screen)
+            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
             for _, window in ipairs(space_windows) do
                 local window_id = tostring(window:id())
 
@@ -371,6 +377,9 @@ function mod.applyState()
 
                     --local saved_screen = saved_info[window_id]["screen"]
                     local saved_space = window_info["space"]
+                    --TODO: if the space does not exist, create a new one and
+                    --      use it as the new destination for every window that
+                    --      should be moved to it
                     hs.spaces.moveWindowToSpace(window, saved_space)
 
                     local saved_fullscreen = window_info["fullscreen"]
