@@ -1,4 +1,5 @@
 local hs = {}
+--hs.chooser = require 'hs.chooser'
 hs.fnutils = require 'hs.fnutils'
 hs.inspect = require 'hs.inspect'
 hs.hotkey = require 'hs.hotkey'
@@ -21,7 +22,7 @@ mod.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 mod.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 mod.data_wins = {} -- collected info for each window
 mod.data_envs = {} -- collected info for each environment
---mod.window_filter = hs.window.filter.new()
+--TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 
 function mod.issueVerbose(text, mode)
     mode = mode or mod.mode
@@ -40,10 +41,14 @@ function mod.notifyUser(case,mode)
         text = "Windows saved!"
     elseif case == "apply" then
         text = "Windows applied!"
+    elseif case == "environment" then
+        text = "Environment undefined!"
+    else
+        error("Unknown case: " .. case)
     end
     mod.issueVerbose(text, mode)
     local message = {
-        title="Hammerspoon",
+        title="Restore Spaces",
         informativeText=text
     }
     hs.notify.new(message):send()
@@ -94,27 +99,21 @@ function mod.processDataInFile(case, data)
     return contents
 end
 
-function mod.askEnvironmentName(mode)
-    mode = mode or mod.mode
-    local text
-    local defaultResponse = "(environment name)"
-    --TODO: dialog with list saved names for potential overwrite
-    local button, answer = hs.dialog.textPrompt(
-        "Name this environment setup",
-        "Current environment is new. Please give it a name:",
-        defaultResponse,
-        "OK", "Cancel")
-    if button == "OK" then
-        text = "Environment name: " .. answer
+--[[
+function mod.validateSpaces(all_screens)
+    local plistPath = "~/Library/Preferences/com.apple.spaces.plist"
+    local plistTable = hs.plist.read(plistPath)
+    
+    TODO: import `plist` module
+    TODO: check if spaces are are not of type `dashboard`
+    
+    if plistTable then
+        print(hs.inspect(plistTable))
     else
-        text = "User cancelled"
-        answer = nil
+        print("Failed to read plist file")
     end
-    mod.issueVerbose(text, mode)
-    return answer
-end
+--]]
 
---TODO: rename to retrieveEnvironmentEntities
 function mod.retrieveEnvironmentEntities(entity, screen, mode)
     local function validateNil(arg)
         if not arg then
@@ -143,7 +142,7 @@ function mod.retrieveEnvironmentEntities(entity, screen, mode)
         all_entities = hs.screen.allScreens()
     elseif entity == "spaces" then
         validateScreen(screen)
-        --TODO: how to return only visible spaces?
+        --TODO: mod.validateSpaces(all_screens)
         all_entities = hs.spaces.spacesForScreen(screen:id())
     elseif entity == "windows" then
         validateScreen(screen)
@@ -172,46 +171,69 @@ function mod.retrieveEnvironmentEntities(entity, screen, mode)
     return all_entities
 end
 
-function mod.isTile(side, window)
-    local frame = window:frame()
-    local screen_frame = window:screen():frame()
-
-    local isFullHeight = frame.h == screen_frame.h
-    if not isFullHeight then
-        return false
+function mod.askEnvironmentName(envs_list, mode)
+    mode = mode or mod.mode
+    local text
+    --[[
+    --TODO: dialog with list saved names for potential overwrite
+    --TODO: detectEnvironment must be changed for asynchronous operation
+    local function chooseEnvironment(choice)
+        if choice then
+            text = "Environment name: " .. choice["text"]
+            mod.issueVerbose(text, mode)
+            return choice["text"]
+        else
+            text = "User cancelled"
+            mod.issueVerbose(text, mode)
+            return nil
+        end
     end
 
-    local isLeftEdge = frame.x == 0
-    local isRightEdge = frame.x + frame.w == screen_frame.w
-    local isLessThanScreenWidth = frame.w < screen_frame.w
-    -- check if tiled by using "y"
-    if side == "left" then
-        return isLeftEdge and isLessThanScreenWidth
-    elseif side == "right" then
-        return isRightEdge and isLessThanScreenWidth
+    local chooser = hs.chooser.new(chooseEnvironment)
+    local choices = {}
+    for _, env_name in ipairs(all_envs) do
+        table.insert(choices, {["text"] = env_name})
+    end
+    table.insert(choices, {["text"] = "(new environment name)"})
+    chooser:choices(choices)
+    chooser:show()
+    --]]
+    
+    local prompt = "Current environment is new.\n"
+    if envs_list == "" then
+        prompt = prompt .. "Please give it a name:"
     else
-        error("Unknown side: " .. side)
-        return nil
+        prompt = prompt .. "List of saved environments: \n" .. envs_list
+        prompt = prompt .. "\nPlease overwrite one or give it a new name:"
     end
-    --TODO: extract ratio to re-apply it later
+    local title = "Name this environment"
+    local default_response = "(environment name)"
+    local button, answer = hs.dialog.textPrompt(
+        title,
+        prompt,
+        default_response,
+        "OK", "Cancel")
+    if button == "OK" then
+        text = "Environment name: " .. answer
+    else
+        text = "User cancelled"
+        answer = nil
+    end
+    mod.issueVerbose(text, mode)
+    return answer
 end
 
-function mod.setTile(side, window)
-    local screen_frame = window:screen():frame()
-    if side == "left" then
-        window:setFrame({x=0, y=0, w=screen_frame.w / 2, h=screen_frame.h})
-    elseif side == "right" then
-        window:setFrame({x=screen_frame.w / 2, y=0, w=screen_frame.w / 2, h=screen_frame.h})
-    else
-        error("Unknown side: " .. side)
-        return nil
-    end
-    --TODO: compatibility with non-half-half frame sizes
-end
-
-function mod.detectEnvironment()
+function mod.detectEnvironment(save_flag)
     local function sortByFrame(a, b)
         return a:frame().x < b:frame().x
+    end
+    local function listKeys(table)
+        local keys_list = ""
+        for key, _ in pairs(table) do
+            keys_list = keys_list .. "'" .. key .. "'\n"
+        end
+        --keys_list = keys_list:sub(1, -3) -- remove last comma and space
+        return keys_list
     end
 
     mod.data_envs = mod.processDataInFile("read","environments")
@@ -223,7 +245,6 @@ function mod.detectEnvironment()
     for index, screen in ipairs(all_screens) do
         local screen_name = screen:name()
         local screen_spaces = hs.spaces.spacesForScreen(screen:id())
-        --TODO: store list of spaces instead of just number
         --TODO: what happens if space ids are not the same?
         local screen_index = tostring(index)
         env[screen_index] = {
@@ -257,21 +278,36 @@ function mod.detectEnvironment()
 
     local text
     if env_exists then
-        text = "Environment already exists: " .. env_name
+        text = "Environment detected: '" .. env_name .. "'"
         mod.issueVerbose(text, mod.mode)
-    else
-        text = "Environment does not exist."
-        mod.issueVerbose(text, mod.mode)
-
-        env_name = mod.askEnvironmentName(mod.mode)
+        --[[
+        -- FOR TESTING ONLY:
+        local envs_list = listKeys(mod.data_envs)
+        env_name = mod.askEnvironmentName(envs_list, mod.mode)
         if not env_name then
             error("Undefined environment name: !")
         else
             mod.data_envs[env_name] = env
         end
+        --]]
+    else
+        text = "Environment does not exist."
+        mod.issueVerbose(text, mod.mode)
+        text = "Environment name undefined!"
+        if save_flag then
+            local envs_list = listKeys(mod.data_envs)
+            env_name = mod.askEnvironmentName(envs_list, mod.mode)
+            if not env_name then
+                error(text)
+            else
+                mod.data_envs[env_name] = env
+            end
+            mod.data_envs = mod.processDataInFile("write","environments")
+        else
+            mod.notifyUser("environment")
+            error(text)
+        end
     end
-
-    mod.data_envs = mod.processDataInFile("write","environments")
     return env_name
 end
 
@@ -281,48 +317,86 @@ function mod.buildEnvironment()
 end
 --]]
 
-function mod.getWindowState(window, mode)
+--[[
+function mod.isTile(side, window)
+    local frame = window:frame()
+    local screen_frame = window:screen():frame()
+
+    local isFullHeight = frame.h == screen_frame.h
+    if not isFullHeight then
+        return false
+    end
+
+    local isLeftEdge = frame.x == 0
+    local isRightEdge = frame.x + frame.w == screen_frame.w
+    local isLessThanScreenWidth = frame.w < screen_frame.w
+    -- check if tiled by using "y"
+    if side == "left" then
+        return isLeftEdge and isLessThanScreenWidth
+    elseif side == "right" then
+        return isRightEdge and isLessThanScreenWidth
+    else
+        error("Unknown side: " .. side)
+        return nil
+    end
+    --TODO: extract ratio to re-apply it later
+end
+--]]
+function mod.getFrameState(window)
+    local frame = window:frame()
+    local screen_frame = window:screen():frame()
+    local frame_state = {
+        ["x"] = frame.x,
+        ["y"] = frame.y,
+        ["w"] = frame.w,
+        ["h"] = frame.h,
+    }
+    local isLeftEdge = frame.x == 0
+    local isRightEdge = frame.x + frame.w == screen_frame.w
+    local isLessThanFullWidth = frame.w < screen_frame.w
+
+    local fullscreen_state = "no"
+    if window:isFullScreen() then
+        if isLessThanFullWidth then
+            if isLeftEdge then
+                fullscreen_state = "left"
+            elseif isRightEdge then
+                fullscreen_state = "right"
+            end
+        else
+            fullscreen_state = "yes"
+        end
+    end
+    return fullscreen_state, frame_state
+end
+
+function mod.getWindowState(window)
     local window_state = {}
     local window_id = tostring(window:id())
 
     --TODO: check if app window is hidden
 
     window_state["title"] = window:title()
-    -- copilot, when a window is is Fullscreen or Tiled mode (left or right), the function `saveState` creates multiple entries in `data_wins`, with ... please modify the function to check, in each space, if a window fo
     window_state["app"] = window:application():name()
-    if window:isFullScreen() then
-        window_state["fullscreen"] = "yes"
-    elseif mod.isTile("left", window) then
-        window_state["fullscreen"] = "left"
-    elseif mod.isTile("right", window) then
-        window_state["fullscreen"] = "right"
-    else
-        local frame = window:frame()
-        window_state["fullscreen"] = "no"
-        window_state["frame"] = {
-            ["x"] = frame.x,
-            ["y"] = frame.y,
-            ["w"] = frame.w,
-            ["h"] = frame.h,
-        }
-    end
-    mod.issueVerbose(
-        hs.inspect(window_state),
-        "verbose" --mod.mode
-    )
+    local fullscreen_state, frame_state = mod.getFrameState(window)
+    window_state["fullscreen"] = fullscreen_state
+    window_state["frame"] = frame_state
+    --mod.issueVerbose("get window " .. window_id, mod.mode)
     return window_state, window_id
 end
 
 function mod.saveEnvironmentState()
-    local env_name = mod.detectEnvironment()
+    local save_new_env = true
+    local env_name = mod.detectEnvironment(save_new_env)
     if not env_name then
         error("Undefined environment name!")
     end
-
-    mod.data_wins = mod.processDataInFile("read","windows")
-    if not mod.data_wins[env_name] then
-        mod.data_wins[env_name] = {}
-    end
+    local env_state = {}
+    --mod.data_wins = mod.processDataInFile("read","windows")
+    --mod.data_wins[env_name] = {}
+    --if not mod.data_wins[env_name] then
+    --    mod.data_wins[env_name] = {}
+    --end
 
     local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
     for _, screen in ipairs(all_screens) do
@@ -343,54 +417,93 @@ function mod.saveEnvironmentState()
             
             local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
             for _, window in ipairs(space_windows) do
-                local window_state, window_id = mod.getWindowState(window, mod.mode)
+                local window_state, window_id = mod.getWindowState(window)
                 window_state["screen"] = tonumber(screen_id)
                 window_state["space"] = space
-                mod.data_wins[env_name][window_id] = window_state
+
+                if window_state["title"] == "" then
+                    print("App:", window_state["app"])
+                    print("Window ID:", window_id)
+                    mod.issueVerbose(
+                        (
+                            "ignored (no title): " ..
+                            "\tapp (" .. window_state["app"] .. ")" ..
+                            "\twindow id (" .. window_id .. ")"
+                        ),
+                        mod.mode
+                    )
+                else
+                    mod.issueVerbose(
+                        hs.inspect(window_state),
+                        mod.mode
+                    )
+                    env_state[window_id] = window_state
+                end
             end
         end
         hs.spaces.gotoSpace(initial_space)
     end
+    mod.data_wins[env_name] = env_state
     mod.data_wins = mod.processDataInFile("write","windows")
     mod.notifyUser("save")
 end
 
-function mod.setWindowState(window, env_info, mode)
-    local window_id = tostring(window:id())
-    if env_info[window_id] then
-        local window_state = env_info[window_id]
-
-        --local saved_screen = saved_info[window_id]["screen"]
-        local saved_space = window_state["space"]
-        --TODO: if the space does not exist, create a new one and
-        --      use it as the new destination for every window that
-        --      should be moved to it
-        hs.spaces.moveWindowToSpace(window, saved_space)
-
-        local saved_fullscreen = window_state["fullscreen"]
-        if saved_fullscreen == "yes" then
-            window:setFullScreen(true)
-        elseif saved_fullscreen == "left" then
-            mod.setTile("left", window)
-        elseif saved_fullscreen == "right" then
-            mod.setTile("right", window)
-        else
-            local saved_frame = window_state["frame"]
-            local frame = window:frame()
-            frame.x = saved_frame["x"]
-            frame.y = saved_frame["y"]
-            frame.w = saved_frame["w"]
-            frame.h = saved_frame["h"]
-            window:setFrame(frame)
-        end
+--[[
+function mod.setTile(side, window)
+    local screen_frame = window:screen():frame()
+    if side == "left" then
+        window:setFrame({x=0, y=0, w=screen_frame.w / 2, h=screen_frame.h})
+    elseif side == "right" then
+        window:setFrame({x=screen_frame.w / 2, y=0, w=screen_frame.w / 2, h=screen_frame.h})
     else
-        window:minimize()
+        error("Unknown side: " .. side)
+        return nil
     end
-    mod.issueVerbose("set window " .. window_id, mod.mode)
+    --TODO: compatibility with non-half-half frame sizes
+end
+--]]
+function mod.setFrameState(window, frame_state, fullscreen_state)
+    if fullscreen_state == "yes" then
+        window:setFullScreen(true)
+    elseif fullscreen_state == "left" then
+        window:setFullScreen(true)
+        --TODO: find a way to make it left split-view
+    elseif fullscreen_state == "right" then
+        window:setFullScreen(true)
+        --TODO: find a way to make it right split-view
+    else
+        local frame = window:frame()
+        frame.x = frame_state["x"]
+        frame.y = frame_state["y"]
+        frame.w = frame_state["w"]
+        frame.h = frame_state["h"]
+        window:setFrame(frame)
+    end
+end
+
+function mod.setWindowState(window,window_state)
+    if not window_state then
+        window:minimize()
+        return
+    end
+    local title = window_state["title"]
+    local app = window_state["app"]
+    local frame_state = window_state["frame"]
+    local fullscreen_state = window_state["fullscreen"]
+    local screen = window_state["screen"]
+    local space = window_state["space"]
+
+    --TODO: if the space does not exist, create a new one and
+    --      use it as the new destination for every window that
+    --      should be moved to it
+    hs.spaces.moveWindowToSpace(window, space)
+    mod.setFrameState(window, frame_state, fullscreen_state)
+    --mod.issueVerbose("set window " .. window_id, mod.mode)
 end
 
 function mod.applyEnvironmentState()
-    local env_name = mod.detectEnvironment()
+    local save_new_env = false
+    local env_name = mod.detectEnvironment(save_new_env)
     if not env_name then
         error("Undefined environment name!")
     end
@@ -400,6 +513,53 @@ function mod.applyEnvironmentState()
     --      ids and save it in the environment JSON
     --TODO: open apps if they are not open
     --TODO: close apps if they are not saved?
+
+    mod.data_wins = mod.processDataInFile("read","windows")
+    if not mod.data_wins[env_name] then
+        error("State for environment has never been saved!")
+    end
+    local env_state = mod.data_wins[env_name]
+
+    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
+    for _, screen in ipairs(all_screens) do
+        local screen_id = tostring(screen:id())
+
+        local initial_space = hs.spaces.activeSpaceOnScreen(screen)
+        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+        local screen_windows = mod.retrieveEnvironmentEntities("windows", screen)
+
+        hs.timer.usleep(1e6 * mod.screen_pause)
+        for _, space in pairs(screen_spaces) do
+            mod.issueVerbose(
+                "go to space: " .. space .. " on screen: " .. screen_id,
+                mod.mode
+            )
+            hs.spaces.gotoSpace(space)
+            hs.timer.usleep(1e6 * mod.space_pause)
+            
+            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
+            for _, window in ipairs(space_windows) do
+                local window_state, window_id = mod.getWindowState(window)
+                window_state = env_state[window_id]
+                mod.issueVerbose(
+                    hs.inspect(window_state),
+                    mod.mode
+                )
+                
+                mod.setWindowState(window,window_state)
+            end
+        end
+        hs.spaces.gotoSpace(initial_space)
+    end
+    mod.notifyUser("apply")
+end
+
+--[[
+function mod.applyEnvironmentState()
+    local env_name = mod.detectEnvironment()
+    if not env_name then
+        error("Undefined environment name!")
+    end
 
     mod.data_wins = mod.processDataInFile("read","windows")
     if not mod.data_wins[env_name] then
@@ -431,5 +591,5 @@ function mod.applyEnvironmentState()
     end
     mod.notifyUser("apply")
 end
-
+--]]
 return mod

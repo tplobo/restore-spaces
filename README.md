@@ -4,6 +4,7 @@ Hammerspoon implementation to restore organization of windows throughout
 spaces on MacOS.
 
 ## Comparisons
+
 - Better than [DisplayMaid](https://funk-isoft.com/display-maid.html) because
   it cycles through every space to save the state of all of them.
 - Less resource-intensive than [Workspaces](https://www.apptorium.com/workspaces).
@@ -109,6 +110,7 @@ Current features under development; any help is appreciated:
    and thus breaks the `hs.spaces.gotoSpace()` method, even in MacOS versions
    that do not feature Dashboard anymore. This can be see in the spaces plist
    file, for example:
+
    ```
    defaults read com.apple.spaces.plist
    > ...
@@ -121,9 +123,16 @@ Current features under development; any help is appreciated:
       }
      ...
    ```
+
    The current studied solution is to forcefully deactivate the
    dashboard, but it does not always work:
+
    ```
    defaults write com.apple.dashboard mcx-disabled -boolean YES
    killall Dock
    ```
+
+2. There are no official APIs for putting two windows in split-view fullscreen
+   mode, so the current approach is to place all windows that had a fullscreen
+   state (split-view or not) into single fullscreen. Split-view has to be set
+   manually by the user with the mouse after calling `applyEnvironmentState`.
