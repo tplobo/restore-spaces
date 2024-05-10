@@ -15,6 +15,7 @@ mod.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 mod.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 
+--[[
 function mod.detectEnvironment(save_flag)
     local function sortByFrame(a, b)
         return a:frame().x < b:frame().x
@@ -40,9 +41,6 @@ function mod.detectEnvironment(save_flag)
         local space_map = {}
         for space_i, space in ipairs(screen_spaces) do
             local space_index = mod.paddedToStr(space_i)
-            --TODO: add docstrings that explain that the first value is
-            --      the original space id during `save`, and the second
-            --      is the current space id during `apply`
             space_map[space_index] = {space, space}
         end
         env[screen_index] = {
@@ -78,16 +76,7 @@ function mod.detectEnvironment(save_flag)
     if env_exists then
         text = "Environment detected: '" .. env_name .. "'"
         mod.issueVerbose(text, mod.verbose)
-        --[[
-        -- FOR TESTING ONLY:
-        local envs_list = listKeys(mod.data_envs)
-        env_name = mod.askEnvironmentName(envs_list, mod.verbose)
-        if not env_name then
-            error("Undefined environment name: !")
-        else
-            mod.data_envs[env_name] = env
-        end
-        --]]
+        
         if save_flag then
             text = "Overwriting space order and map..."
             mod.issueVerbose(text, mod.verbose)
@@ -113,7 +102,6 @@ function mod.detectEnvironment(save_flag)
                     hs.spaces.removeSpace(last_space_id)
                     screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
                 end
-                --]]
                 local screen_map = {}
                 for space_i, space in ipairs(screen_spaces) do
                     local space_index = mod.paddedToStr(space_i)
@@ -147,10 +135,11 @@ function mod.detectEnvironment(save_flag)
     mod.issueVerbose(text, mod.verbose)
     return env_name, env
 end
+--]]
 
 function mod.saveEnvironmentState()
     local save_new_env = true
-    local env_name = mod.detectEnvironment(save_new_env)
+    local env_name = mod.processEnvironment(save_new_env)
     if not env_name then
         error("Undefined environment name!")
     end
@@ -208,7 +197,7 @@ end
 
 function mod.applyEnvironmentState()
     local save_new_env = false
-    local env_name = mod.detectEnvironment(save_new_env)
+    local env_name = mod.processEnvironment(save_new_env)
     if not env_name then
         error("Undefined environment name!")
     end
