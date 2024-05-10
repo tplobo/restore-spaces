@@ -168,6 +168,10 @@ function mod.retrieveEnvironmentEntities(entity, screen, mode)
         hs.inspect(all_entities)
     )
     mod.issueVerbose(message, mode)
+
+    if not all_entities then
+        all_entities = {}
+    end
     return all_entities
 end
 
@@ -240,11 +244,11 @@ function mod.detectEnvironment(save_flag)
     
     local all_screens = mod.retrieveEnvironmentEntities("screens")
     table.sort(all_screens, sortByFrame)
-
+    
     local env = {}
     for index, screen in ipairs(all_screens) do
         local screen_name = screen:name()
-        local screen_spaces = hs.spaces.spacesForScreen(screen:id())
+        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
         --TODO: what happens if space ids are not the same?
         local screen_index = tostring(index)
         env[screen_index] = {
@@ -308,40 +312,61 @@ function mod.detectEnvironment(save_flag)
             error(text)
         end
     end
-    return env_name
+    return env_name, env
 end
 
---[[
-function mod.buildEnvironment()
-    --TODO: increase number of spaces if needed, but not decrease
+--[]
+function mod.buildEnvironment(env_name)
+    mod.data_envs = mod.processDataInFile("read","environments")
+    local saved_env = mod.data_envs[env_name]
+    if not saved_env then
+        error("Environment '" .. env_name .. "' does not exist.")
+    end
+
+    local space_map = {}
+
+    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
+    for screen_index, screen in ipairs(all_screens) do
+        local screen_id = tostring(screen_index)
+
+        local screen_name = screen:name()
+        local saved_name = saved_env[screen_id]["monitor"]
+        if screen_name ~= saved_name then
+            error(
+                "Environment mismatch: " .. screen_name .. " ≠ " .. saved_name
+            )
+        end
+
+        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+        local saved_spaces = saved_env[screen_id]["spaces"]
+        while #screen_spaces < #saved_spaces do
+            hs.spaces.addSpaceToScreen(screen_index)
+            screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+        end
+        while #screen_spaces > #saved_spaces do
+            --TODO: do not decrease number of spaces (only increase)?
+            local last_space_id = screen_spaces[#screen_spaces]
+            hs.spaces.removeSpace(last_space_id)
+            screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+        end
+
+        for i, space_id in ipairs(saved_spaces) do
+            space_map[space_id] = screen_spaces[i]
+        end
+
+    end
+    mod.data_envs[env_name]["space_map"] = space_map
+    print("env: " .. hs.inspect(mod.data_envs[env_name]))
+    --mod.processDataInFile("write", "environments")
+
+    mod.issueVerbose(
+        "new space_map: " .. hs.inspect(space_map),
+        "verbose" --mod.mode
+    )
+    return space_map
 end
 --]]
 
---[[
-function mod.isTile(side, window)
-    local frame = window:frame()
-    local screen_frame = window:screen():frame()
-
-    local isFullHeight = frame.h == screen_frame.h
-    if not isFullHeight then
-        return false
-    end
-
-    local isLeftEdge = frame.x == 0
-    local isRightEdge = frame.x + frame.w == screen_frame.w
-    local isLessThanScreenWidth = frame.w < screen_frame.w
-    -- check if tiled by using "y"
-    if side == "left" then
-        return isLeftEdge and isLessThanScreenWidth
-    elseif side == "right" then
-        return isRightEdge and isLessThanScreenWidth
-    else
-        error("Unknown side: " .. side)
-        return nil
-    end
-    --TODO: extract ratio to re-apply it later
-end
---]]
 function mod.getFrameState(window)
     local frame = window:frame()
     local screen_frame = window:screen():frame()
@@ -392,11 +417,6 @@ function mod.saveEnvironmentState()
         error("Undefined environment name!")
     end
     local env_state = {}
-    --mod.data_wins = mod.processDataInFile("read","windows")
-    --mod.data_wins[env_name] = {}
-    --if not mod.data_wins[env_name] then
-    --    mod.data_wins[env_name] = {}
-    --end
 
     local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
     for _, screen in ipairs(all_screens) do
@@ -448,20 +468,6 @@ function mod.saveEnvironmentState()
     mod.notifyUser("save")
 end
 
---[[
-function mod.setTile(side, window)
-    local screen_frame = window:screen():frame()
-    if side == "left" then
-        window:setFrame({x=0, y=0, w=screen_frame.w / 2, h=screen_frame.h})
-    elseif side == "right" then
-        window:setFrame({x=screen_frame.w / 2, y=0, w=screen_frame.w / 2, h=screen_frame.h})
-    else
-        error("Unknown side: " .. side)
-        return nil
-    end
-    --TODO: compatibility with non-half-half frame sizes
-end
---]]
 function mod.setFrameState(window, frame_state, fullscreen_state)
     if fullscreen_state == "yes" then
         window:setFullScreen(true)
@@ -507,6 +513,8 @@ function mod.applyEnvironmentState()
     if not env_name then
         error("Undefined environment name!")
     end
+
+    --mod.buildEnvironment(env_name)
 
     --TODO: build environment to ensure every space id exists or has an
     --      equivalent, by creating a mapping between old and new space
@@ -554,42 +562,4 @@ function mod.applyEnvironmentState()
     mod.notifyUser("apply")
 end
 
---[[
-function mod.applyEnvironmentState()
-    local env_name = mod.detectEnvironment()
-    if not env_name then
-        error("Undefined environment name!")
-    end
-
-    mod.data_wins = mod.processDataInFile("read","windows")
-    if not mod.data_wins[env_name] then
-        error("State for environment has never been saved!")
-    end
-    local env_info = mod.data_wins[env_name]
-
-    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
-    for _, screen in ipairs(all_screens) do
-        local screen_id = tostring(screen:id())
-        local initial_space = hs.spaces.activeSpaceOnScreen(screen)
-        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-
-        hs.timer.usleep(1e6 * mod.screen_pause)
-        for _, space in pairs(screen_spaces) do
-            mod.issueVerbose(
-                "go to space: " .. space .. " on screen: " .. screen_id,
-                mod.mode
-            )
-            hs.spaces.gotoSpace(space)
-            hs.timer.usleep(1e6 * mod.space_pause)
-
-            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
-            for _, window in ipairs(space_windows) do
-                mod.setWindowState(window, env_info, mod.mode)
-            end
-        end
-        hs.spaces.gotoSpace(initial_space)
-    end
-    mod.notifyUser("apply")
-end
---]]
 return mod
