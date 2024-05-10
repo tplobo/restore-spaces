@@ -21,12 +21,16 @@ local mod = {}
 mod.data_wins = {} -- collected info for each window
 mod.data_envs = {} -- collected info for each environment
 
+function mod.paddedToStr(int)
+    return string.format("%03d", int)
+end
+
 function mod.delayExecution(delay)
     hs.timer.usleep(1e6 * delay)
 end
 
-function mod.recursiveKeysAreStrings(arg, mode)
-    mode = mode or mod.mode
+function mod.recursiveKeysAreStrings(arg, verbose)
+    verbose = verbose or mod.verbose
     local check = true
     if type(arg) == "table" then
         for key, value in pairs(arg) do
@@ -34,29 +38,27 @@ function mod.recursiveKeysAreStrings(arg, mode)
                 check = check and false
             end
             if type(value) == "table" then
-                local result = mod.recursiveKeysAreStrings(value, mode)
+                local result = mod.recursiveKeysAreStrings(value, verbose)
                 check = check and result
             end
         end
     else
-        mod.issueVerbose("Non-table argument: " .. arg, mode)
+        mod.issueVerbose("Non-table argument: " .. arg, verbose)
         check = check and false
     end
     return check
 end
 
-function mod.issueVerbose(text, mode)
-    mode = mode or mod.mode
-    if mode ==  "verbose" then
+function mod.issueVerbose(text, verbose)
+    verbose = verbose or mod.verbose
+    if verbose then
         print(text)
-    elseif mode == 'quiet' then
-        -- do nothing
     else
-        error("Unknown mode: " .. mode)
+        -- do nothing
     end
 end
 
-function mod.notifyUser(case,mode)
+function mod.notifyUser(case,verbose)
     local text = nil
     if case == "save" then
         text = "Windows saved!"
@@ -67,7 +69,7 @@ function mod.notifyUser(case,mode)
     else
         error("Unknown case: " .. case)
     end
-    mod.issueVerbose(text, mode)
+    mod.issueVerbose(text, verbose)
     local message = {
         title="Restore Spaces",
         informativeText=text
@@ -86,18 +88,23 @@ function mod.processDataInFile(case, data)
         file:close()
         return hs.json.decode(json_contents)
     end
-
     local function writeFile(abs_path, contents)
+        --[[
+        --TODO: fix recursive test to accept array values
+        if not mod.recursiveKeysAreStrings(contents) then
+            print("contents: " .. hs.inspect(contents))
+            error("Keys in a table must be strings for JSON encoding!")
+        end
+        --]]
         local file = io.open(abs_path, 'w')
         if not file then
             print("Failed to open file: " .. abs_path)
             return
         end
-        if not contents then
-            --TODO: change to recursive check on table keys (must be strings)
-            error("Contents for JSON file cannot be 'nil'!")
-        end
-        local json_contents = hs.json.encode(contents, true) -- true: prettyprint
+        local json_contents = hs.json.encode(
+            contents,
+            true -- true: prettyprint
+        )
         file:write(json_contents)
         file:close()
     end
@@ -139,7 +146,7 @@ function mod.validateSpaces(all_screens)
     end
 --]]
 
-function mod.retrieveEnvironmentEntities(entity, screen, mode)
+function mod.retrieveEnvironmentEntities(entity, screen, verbose)
     local function validateNil(arg)
         if not arg then
             return true
@@ -192,7 +199,7 @@ function mod.retrieveEnvironmentEntities(entity, screen, mode)
         entity,
         hs.inspect(all_entities)
     )
-    mod.issueVerbose(message, mode)
+    mod.issueVerbose(message, verbose)
 
     if not all_entities then
         all_entities = {}
@@ -200,8 +207,8 @@ function mod.retrieveEnvironmentEntities(entity, screen, mode)
     return all_entities
 end
 
-function mod.askEnvironmentName(envs_list, mode)
-    mode = mode or mod.mode
+function mod.askEnvironmentName(envs_list, verbose)
+    verbose = verbose or mod.verbose
     local text
     --[[
     --TODO: dialog with list saved names for potential overwrite
@@ -209,11 +216,11 @@ function mod.askEnvironmentName(envs_list, mode)
     local function chooseEnvironment(choice)
         if choice then
             text = "Environment name: " .. choice["text"]
-            mod.issueVerbose(text, mode)
+            mod.issueVerbose(text, verbose)
             return choice["text"]
         else
             text = "User cancelled"
-            mod.issueVerbose(text, mode)
+            mod.issueVerbose(text, verbose)
             return nil
         end
     end
@@ -248,149 +255,9 @@ function mod.askEnvironmentName(envs_list, mode)
         text = "User cancelled"
         answer = nil
     end
-    mod.issueVerbose(text, mode)
+    mod.issueVerbose(text, verbose)
     return answer
 end
-
---[[
-function mod.detectEnvironment(save_flag)
-    local function sortByFrame(a, b)
-        return a:frame().x < b:frame().x
-    end
-    local function listKeys(table)
-        local keys_list = ""
-        for key, _ in pairs(table) do
-            keys_list = keys_list .. "'" .. key .. "'\n"
-        end
-        --keys_list = keys_list:sub(1, -3) -- remove last comma and space
-        return keys_list
-    end
-
-    mod.data_envs = mod.processDataInFile("read","environments")
-    
-    local all_screens = mod.retrieveEnvironmentEntities("screens")
-    table.sort(all_screens, sortByFrame)
-    
-    local env = {}
-    for index, screen in ipairs(all_screens) do
-        local screen_name = screen:name()
-        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        --TODO: what happens if space ids are not the same?
-        local screen_index = tostring(index)
-        env[screen_index] = {
-            ["monitor"] = screen_name,
-            ["spaces"] = screen_spaces
-        }
-    end
-
-    local env_exists = false
-    local env_name
-    for saved_name, saved_env in pairs(mod.data_envs) do
-        local saved_monitors = {}
-        for _, value in pairs(saved_env) do
-            table.insert(saved_monitors, value["monitor"])
-        end
-
-        local current_monitors = {}
-        for _, value in pairs(env) do
-            table.insert(current_monitors, value["monitor"])
-        end
-
-        local check_monitors = (
-            hs.inspect(saved_monitors) == hs.inspect(current_monitors)
-        )
-        if check_monitors then
-            env_exists = true
-            env_name = saved_name
-            break
-        end
-    end
-
-    local text
-    if env_exists then
-        text = "Environment detected: '" .. env_name .. "'"
-        mod.issueVerbose(text, mod.mode)
-        --[[
-        -- FOR TESTING ONLY:
-        local envs_list = listKeys(mod.data_envs)
-        env_name = mod.askEnvironmentName(envs_list, mod.mode)
-        if not env_name then
-            error("Undefined environment name: !")
-        else
-            mod.data_envs[env_name] = env
-        end
-        --]
-    else
-        text = "Environment does not exist."
-        mod.issueVerbose(text, mod.mode)
-        text = "Environment name undefined!"
-        if save_flag then
-            local envs_list = listKeys(mod.data_envs)
-            env_name = mod.askEnvironmentName(envs_list, mod.mode)
-            if not env_name then
-                error(text)
-            else
-                mod.data_envs[env_name] = env
-            end
-            mod.data_envs = mod.processDataInFile("write","environments")
-        else
-            mod.notifyUser("environment")
-            error(text)
-        end
-    end
-    return env_name, env
-end
-
-function mod.buildEnvironment(env_name)
-    mod.data_envs = mod.processDataInFile("read","environments")
-    local saved_env = mod.data_envs[env_name]
-    if not saved_env then
-        error("Environment '" .. env_name .. "' does not exist.")
-    end
-
-    local space_map = {}
-
-    local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
-    for screen_index, screen in ipairs(all_screens) do
-        local screen_id = tostring(screen_index)
-
-        local screen_name = screen:name()
-        local saved_name = saved_env[screen_id]["monitor"]
-        if screen_name ~= saved_name then
-            error(
-                "Environment mismatch: " .. screen_name .. " ≠ " .. saved_name
-            )
-        end
-
-        local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        local saved_spaces = saved_env[screen_id]["spaces"]
-        while #screen_spaces < #saved_spaces do
-            hs.spaces.addSpaceToScreen(screen_index)
-            screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        end
-        while #screen_spaces > #saved_spaces do
-            --TODO: do not decrease number of spaces (only increase)?
-            local last_space_id = screen_spaces[#screen_spaces]
-            hs.spaces.removeSpace(last_space_id)
-            screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        end
-
-        for i, space_id in ipairs(saved_spaces) do
-            space_map[space_id] = screen_spaces[i]
-        end
-
-    end
-    mod.data_envs[env_name]["space_map"] = space_map
-    print("env: " .. hs.inspect(mod.data_envs[env_name]))
-    --mod.processDataInFile("write", "environments")
-
-    mod.issueVerbose(
-        "new space_map: " .. hs.inspect(space_map),
-        "verbose" --mod.mode
-    )
-    return space_map
-end
---]]
 
 function mod.getWindowState(window)
     local window_state = {}
@@ -403,7 +270,7 @@ function mod.getWindowState(window)
     local fullscreen_state, frame_state = mod.getFrameState(window)
     window_state["fullscreen"] = fullscreen_state
     window_state["frame"] = frame_state
-    --mod.issueVerbose("get window " .. window_id, mod.mode)
+    --mod.issueVerbose("get window " .. window_id, mod.verbose)
     return window_state, window_id
 end
 
@@ -424,7 +291,7 @@ function mod.setWindowState(window,window_state)
     --      should be moved to it
     hs.spaces.moveWindowToSpace(window, space)
     mod.setFrameState(window, frame_state, fullscreen_state)
-    --mod.issueVerbose("set window " .. window_id, mod.mode)
+    --mod.issueVerbose("set window " .. window_id, mod.verbose)
 end
 
 function mod.getFrameState(window)

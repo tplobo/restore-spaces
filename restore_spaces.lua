@@ -9,7 +9,8 @@ hs.spaces = require 'hs.spaces'
 local mod = require("_restore_spaces")
 
 -- Global variables (defaults)
-mod.mode = "quiet" -- "quiet" or "verbose"
+--mod.mode = "quiet" -- "quiet" or "verbose"
+mod.verbose = false
 mod.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 mod.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
@@ -32,18 +33,20 @@ function mod.detectEnvironment(save_flag)
     table.sort(all_screens, sortByFrame)
     
     local env = {}
-    for index, screen in ipairs(all_screens) do
+    for screen_i, screen in ipairs(all_screens) do
         local screen_name = screen:name()
         local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        local screen_index = tostring(index)
+        local screen_index = mod.paddedToStr(screen_i)
         local space_map = {}
-        for _, space in ipairs(screen_spaces) do
-            local space_id = tostring(space)
-            space_map[space_id] = space
+        for space_i, space in ipairs(screen_spaces) do
+            local space_index = mod.paddedToStr(space_i)
+            --TODO: add docstrings that explain that the first value is
+            --      the original space id during `save`, and the second
+            --      is the current space id during `apply`
+            space_map[space_index] = {space, space}
         end
         env[screen_index] = {
             ["monitor"] = screen_name,
-            ["space_order"] = screen_spaces,
             ["space_map"] = space_map
         }
     end
@@ -74,11 +77,11 @@ function mod.detectEnvironment(save_flag)
     local text
     if env_exists then
         text = "Environment detected: '" .. env_name .. "'"
-        mod.issueVerbose(text, mod.mode)
+        mod.issueVerbose(text, mod.verbose)
         --[[
         -- FOR TESTING ONLY:
         local envs_list = listKeys(mod.data_envs)
-        env_name = mod.askEnvironmentName(envs_list, mod.mode)
+        env_name = mod.askEnvironmentName(envs_list, mod.verbose)
         if not env_name then
             error("Undefined environment name: !")
         else
@@ -87,18 +90,18 @@ function mod.detectEnvironment(save_flag)
         --]]
         if save_flag then
             text = "Overwriting space order and map..."
-            mod.issueVerbose(text, mod.mode)
+            mod.issueVerbose(text, mod.verbose)
         else
             text = "Re-building environment..."
-            mod.issueVerbose(text, mod.mode)
+            mod.issueVerbose(text, mod.verbose)
             local saved_env = mod.data_envs[env_name]
-            for screen_index, screen in ipairs(all_screens) do
-                local screen_id = tostring(screen_index)
+            for screen_i, screen in ipairs(all_screens) do
+                local screen_index = mod.paddedToStr(screen_i)
                 local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-                local saved_map = saved_env[screen_id]["space_map"]
+                local saved_map = saved_env[screen_index]["space_map"]
                 local saved_spaces = {}
-                for _, space_id in pairs(saved_map) do
-                    table.insert(saved_spaces, space_id)
+                for _, pair in pairs(saved_map) do
+                    table.insert(saved_spaces, pair[1])
                 end
                 while #screen_spaces < #saved_spaces do
                     hs.spaces.addSpaceToScreen(screen_index)
@@ -112,24 +115,23 @@ function mod.detectEnvironment(save_flag)
                 end
                 --]]
                 local screen_map = {}
-                for i, space_id in ipairs(screen_spaces) do
-                    space_id = tostring(space_id)
-                    screen_map[space_id] = saved_spaces[i]
+                for space_i, space in ipairs(screen_spaces) do
+                    local space_index = mod.paddedToStr(space_i)
+                    screen_map[space_index] = {saved_spaces[space_i], space}
                 end
-                --print("screen_map: " .. hs.inspect(screen_map))
-                env[screen_id]["space_map"] = screen_map
-                print("env: " .. hs.inspect(env))
+                env[screen_index]["space_map"] = screen_map
+                mod.issueVerbose("env: " .. hs.inspect(env), mod.verbose)
             end
         end
         mod.data_envs[env_name] = env
         mod.processDataInFile("write","environments")
     else
         text = "Environment does not exist."
-        mod.issueVerbose(text, mod.mode)
+        mod.issueVerbose(text, mod.verbose)
         text = "Environment name undefined!"
         if save_flag then
             local envs_list = listKeys(mod.data_envs)
-            env_name = mod.askEnvironmentName(envs_list, mod.mode)
+            env_name = mod.askEnvironmentName(envs_list, mod.verbose)
             if not env_name then
                 error(text)
             else
@@ -142,7 +144,7 @@ function mod.detectEnvironment(save_flag)
         end
     end
     text = "Environment (" .. env_name .. "): " .. hs.inspect(env)
-    mod.issueVerbose(text, mod.mode)
+    mod.issueVerbose(text, mod.verbose)
     return env_name, env
 end
 
@@ -166,7 +168,7 @@ function mod.saveEnvironmentState()
         for _, space in pairs(screen_spaces) do
             mod.issueVerbose(
                 "go to space: " .. space .. " on screen: " .. screen_id,
-                mod.mode
+                mod.verbose
             )
             hs.spaces.gotoSpace(space)
             mod.delayExecution(mod.space_pause)
@@ -186,12 +188,12 @@ function mod.saveEnvironmentState()
                             "\tapp (" .. window_state["app"] .. ")" ..
                             "\twindow id (" .. window_id .. ")"
                         ),
-                        mod.mode
+                        mod.verbose
                     )
                 else
                     mod.issueVerbose(
                         hs.inspect(window_state),
-                        mod.mode
+                        mod.verbose
                     )
                     env_state[window_id] = window_state
                 end
@@ -237,7 +239,7 @@ function mod.applyEnvironmentState()
         for _, space in pairs(screen_spaces) do
             mod.issueVerbose(
                 "go to space: " .. space .. " on screen: " .. screen_id,
-                mod.mode
+                mod.verbose
             )
             hs.spaces.gotoSpace(space)
             mod.delayExecution(mod.space_pause)
@@ -248,7 +250,7 @@ function mod.applyEnvironmentState()
                 window_state = env_state[window_id]
                 mod.issueVerbose(
                     hs.inspect(window_state),
-                    mod.mode
+                    mod.verbose
                 )
                 --TODO: send window to space equivalent space in map
                 mod.setWindowState(window,window_state)
