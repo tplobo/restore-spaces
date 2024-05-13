@@ -274,22 +274,30 @@ function mod.getWindowState(window)
     return window_state, window_id
 end
 
-function mod.setWindowState(window,window_state)
+function mod.setWindowState(window,window_state,space_map)
     if not window_state then
         window:minimize()
         return
     end
-    local title = window_state["title"]
-    local app = window_state["app"]
+    --local title = window_state["title"]
+    --local app = window_state["app"]
     local frame_state = window_state["frame"]
     local fullscreen_state = window_state["fullscreen"]
-    local screen = window_state["screen"]
+    --local screen = window_state["screen"]
     local space = window_state["space"]
 
-    --TODO: if the space does not exist, create a new one and
-    --      use it as the new destination for every window that
-    --      should be moved to it
-    hs.spaces.moveWindowToSpace(window, space)
+    if space_map then
+        for _, pair in pairs(space_map) do
+            local original_space = pair[1]
+            local current_space = pair[2]
+            if original_space == space then
+                hs.spaces.moveWindowToSpace(window, current_space)
+                break
+            end
+        end
+    else
+        hs.spaces.moveWindowToSpace(window, space)
+    end
     mod.setFrameState(window, frame_state, fullscreen_state)
     --mod.issueVerbose("set window " .. window_id, mod.verbose)
 end
@@ -444,6 +452,18 @@ function mod.validateEnvironment(env)
 end
 
 function mod.rebuildEnvironment(env, env_name, all_screens, save_flag)
+    local function lengthTables(...)
+        local args = {...}
+        local all_counts = {}
+        for i, arg in ipairs(args) do
+            local count = 0
+            for _ in pairs(arg) do count = count + 1 end
+            all_counts[i] = count
+        end
+        return table.unpack(all_counts)
+    end
+
+
     if save_flag then
         mod.issueVerbose("Overwriting space order and map...", mod.verbose)
     else
@@ -453,23 +473,24 @@ function mod.rebuildEnvironment(env, env_name, all_screens, save_flag)
             local screen_index = mod.paddedToStr(screen_i)
             local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
             local saved_map = saved_env[screen_index]["space_map"]
-            local saved_spaces = {}
-            for _, pair in pairs(saved_map) do
-                table.insert(saved_spaces, pair[1])
-            end
-            while #screen_spaces < #saved_spaces do
-                hs.spaces.addSpaceToScreen(screen_index)
+            local n_screen, n_saved = lengthTables(screen_spaces, saved_map)
+            local close_MissionControl = false
+            while n_screen < n_saved do
+                hs.spaces.addSpaceToScreen(screen_i, close_MissionControl)
                 screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+                n_screen, n_saved = lengthTables(screen_spaces, saved_map)
             end
-            while #screen_spaces > #saved_spaces do
-                local last_space_id = screen_spaces[#screen_spaces]
-                hs.spaces.removeSpace(last_space_id)
+            while n_screen > n_saved do
+                local last_space_id = screen_spaces[n_screen]
+                hs.spaces.removeSpace(last_space_id, close_MissionControl)
                 screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
+                n_screen, n_saved = lengthTables(screen_spaces, saved_map)
             end
             local screen_map = {}
             for space_i, space in ipairs(screen_spaces) do
                 local space_index = mod.paddedToStr(space_i)
-                screen_map[space_index] = {saved_spaces[space_i], space}
+                local original_space = saved_map[space_index][1]
+                screen_map[space_index] = {original_space, space}
             end
             env[screen_index]["space_map"] = screen_map
             mod.issueVerbose("env: " .. hs.inspect(env), mod.verbose)
