@@ -23,22 +23,23 @@ brew install --cask hammerspoon
    for Hammerspoon:
 
 - Download `spaces-v0.x-universal.tar.gz`
-- Place the file in your `.hammerspoon` folder and extract it:
+- Extract it in your `.hammerspoon` folder:
 
 ```
 cd ~/.hammerspoon
 tar -xzf ~/Downloads/spaces-v0.x.tar.gz
 ```
 
-3. Run `install.sh` to copy both `init.lua` and `restore_spaces.lua` files
-   into your `.hammerspoon` folder:
+3. Run `install.sh` to copy `init.lua`, `_restore_spaces.lua` and
+   `restore_spaces.lua` files into your `.hammerspoon` folder:
 
    ```
    zsh install.sh
    ```
 
-   or just copy `restore_spaces.lua` and import the module in your own
-   `.hammerspoon/init.lua` file to avoid conflicts with other modules.
+   or just copy `_restore_spaces.lua` and `restore_spaces.lua`, and import the
+   module in your own `.hammerspoon/init.lua` file to avoid conflicts with
+   other modules.
 
 4. Set your preferred configurations and hotkey combinations, for example:
 
@@ -48,12 +49,11 @@ hs.hotkey = require "hs.hotkey"
 hs.restore_spaces = require 'restore_spaces'
 
 -- Configure 'restore_spaces'
-hs.restore_spaces.mode = "quiet"
+hs.restore_spaces.verbose = false
 hs.restore_spaces.space_pause = 0.3
 hs.restore_spaces.screen_pause = 0.4
 
 -- Bind hotkeys for 'restore_spaces'
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "D", hs.restore_spaces.detectEnvironment)
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveState)
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
 ```
@@ -63,7 +63,7 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
 
 6. Run the commands a few times to check whether the `space_pause` and
    `screen_pause` settings comply with your mac. They might need to be
-   increased if the console issues:
+   increased if the console prints:
    ```
    ... attempt to index a nil value (local 'child')
     stack traceback:
@@ -76,7 +76,7 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
 
    _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>S</kbd>
 
-2. Press the "apply" hotkey combination to restore that state.
+1. Press the "apply" hotkey combination to restore that state.
 
    _e.g._: <kbd>Ctrl</kbd> + <kbd>Opt</kbd> + <kbd>Cmd</kbd> + <kbd>A</kbd>
 
@@ -87,8 +87,12 @@ Following features have already been implemented:
 - Add functionality for multiple monitors (_e.g._ move space to other monitor).
 - Save JSON files with multiple save-state, for different work environments
   (_e.g._ office and home office), based on the list of monitors connected to
-  Mac.
+  Mac. The saved states are unique for each set and order of monitors (\_i.e.,
+  an "envirnment").
 - Ask name of environment when saving state for inclusion in JSON files.
+- Fix restore for when current number of screens is different than the number
+  of saved ones.
+- Check functionalities if/when space IDs change with space deletion/creation.
 
 Current features under development; any help is appreciated:
 
@@ -96,12 +100,16 @@ Current features under development; any help is appreciated:
 - Fix restore for two windows in Fullscreen, Tile left and Tile right, which
   current does not work (afaik, cannot be implemented).
 - Ensure save/apply do not consider hidden windows.
-- Fix restore for when current number of screens is different than the number
-  of saved ones.
 - Ask if the name of new environment should overwrite an environment already
   saved.
-- Check functionalities if/when space IDs change with space deletion/creation.
-- Add tests.
+- Add a user variable that enforces a maximum number of spaces or a list of
+  space indexes, per screen, that are restored by the functions (so that spaces
+  manipulation is limited).
+- Modify functions to create "profiles" instead of "environment" states, as
+  to allow for multiply profiles in the same environment.
+- Add a workaround to deal with the phantom dashboard space (_vide_ **Known
+  Issues**).
+- Add tests with mocking, due to the dependence on mac features.
 - ...
 
 ## Known issues
@@ -132,7 +140,7 @@ Current features under development; any help is appreciated:
    killall Dock
    ```
 
-2. There are no official APIs for putting two windows in split-view fullscreen
+1. There are no official APIs for putting two windows in split-view fullscreen
    mode, so the current approach is to place all windows that had a fullscreen
    state (split-view or not) into single fullscreen. Split-view has to be set
-   manually by the user with the mouse after calling `applyEnvironmentState`.
+   manually by the user (with the mouse) after calling `applyEnvironmentState`.
