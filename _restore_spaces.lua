@@ -8,6 +8,7 @@ hs.window = require 'hs.window'
 hs.screen = require 'hs.screen'
 hs.dialog = require 'hs.dialog'
 hs.timer = require 'hs.timer'
+hs.plist = require 'hs.plist'
 hs.json = require 'hs.json'
 
 -- Requires installing the `spaces` module
@@ -89,8 +90,12 @@ function mod.processDataInFile(case, data)
         return hs.json.decode(json_contents)
     end
     local function writeFile(abs_path, contents)
+        if not contents then
+            print("No contents to write!")
+            return
+        end
         --[[
-        --TODO: fix recursive test to accept array values
+        --TODO: fix recursive test to accept arrays (which are dicts in Lua)
         if not mod.recursiveKeysAreStrings(contents) then
             print("contents: " .. hs.inspect(contents))
             error("Keys in a table must be strings for JSON encoding!")
@@ -132,74 +137,95 @@ function mod.processDataInFile(case, data)
 end
 
 --[[
-function mod.validateSpaces(all_screens)
-    local plistPath = "~/Library/Preferences/com.apple.spaces.plist"
-    local plistTable = hs.plist.read(plistPath)
-    
-    TODO: import `plist` module
-    TODO: check if spaces are are not of type `dashboard`
-    
-    if plistTable then
-        print(hs.inspect(plistTable))
-    else
+function mod.validateSpaces()
+    --TODO: check args compatible with retrieveEnvironmentEntities
+    local function extractNestedTable(key_sequence, table)
+        local current_table = table
+        for _, key in ipairs(key_sequence) do
+            if type(current_table) ~= "table" then
+                error("Value is not a table at key: " .. key)
+            end
+            if current_table[key] then
+                current_table = current_table[key]
+            else
+                error("Key not found: " .. key)
+            end
+        end
+        return current_table
+    end
+
+    local plist_path = "~/Library/Preferences/com.apple.spaces.plist"
+    local plist_spaces = hs.plist.read(plist_path)
+    if not plist_spaces then
         print("Failed to read plist file")
     end
+
+    local key_sequence = {
+        "SpacesDisplayConfiguration",
+        "Management Data",
+        "Monitors",
+        1, --TODO: look for the index of the appropriate screen, accept nil for all screens
+        "Spaces",
+    }
+    local spaces_info = extractNestedTable(key_sequence, plist_spaces)
+
+    local valid_spaces = {}
+    local count = 0
+    for _, value in ipairs(spaces_info) do
+        if value["uuid"] ~= "dashboard" then
+            count = count + 1
+            valid_spaces[count] = value["id64"]
+        end
+    end
+    print(hs.inspect(valid_spaces))
+    return valid_spaces
+end
 --]]
 
 function mod.retrieveEnvironmentEntities(entity, screen, verbose)
-    local function validateNil(arg)
-        if not arg then
-            return true
-        else
-            error("Argument not nil: " .. hs.inspect(arg))
-        end
-    end
     local function validateScreen(arg)
-        local is_screen = tostring(arg):match("hs.screen")
-        if is_screen then
-            return true
-        else
-            error(
-                "Argument is not a 'screen': " .. hs.inspect(screen)
-            )
+        if not arg or tostring(arg):match("hs.screen") then return true
+        else error("Argument is not a 'screen': " .. hs.inspect(arg))
         end
     end
+
     local function isWindowOnScreen(window)
-        return window:screen() == screen
+        return screen == nil or window:screen() == screen
     end
+
+    validateScreen(screen)
 
     local all_entities
     if entity == "screens" then
-        validateNil(screen)
-        all_entities = hs.screen.allScreens()
+        if screen then
+            all_entities = {screen}
+        else
+            all_entities = hs.screen.allScreens()
+        end
     elseif entity == "spaces" then
-        validateScreen(screen)
-        --TODO: mod.validateSpaces(all_screens)
-        all_entities = hs.spaces.spacesForScreen(screen:id())
+        if screen then
+            all_entities = hs.spaces.spacesForScreen(screen:id())
+            --TODO: mod.validateSpaces(all_spaces, screen)
+        else
+            all_entities = {}
+            local all_screens = hs.screen.allScreens()
+            for _, scr in ipairs(all_screens) do
+                local screen_spaces = hs.spaces.spacesForScreen(scr:id())
+                if not screen_spaces then screen_spaces = {} end
+                for _, space in ipairs(screen_spaces) do
+                    table.insert(all_entities, space)
+                end
+            end
+        end
     elseif entity == "windows" then
-        validateScreen(screen)
-        local all_windows = hs.window.orderedWindows()
-        all_entities = hs.fnutils.filter(
-            all_windows,
-            isWindowOnScreen
-        )
-    elseif entity == "visible" then
-        validateScreen(screen)
-        local all_visible = hs.window.visibleWindows()
-        all_entities = hs.fnutils.filter(
-            all_visible,
-            isWindowOnScreen
-        )
+        local all_windows = hs.window.visibleWindows()
+        all_entities = hs.fnutils.filter(all_windows, isWindowOnScreen)
     else
         error("Unknown entity: " .. entity)
     end
 
-    local message = string.format(
-        "all %s: %s",
-        entity,
-        hs.inspect(all_entities)
-    )
-    mod.issueVerbose(message, verbose)
+    local text = "all " .. entity .. ": " .. hs.inspect(all_entities)
+    mod.issueVerbose(text, verbose)
 
     if not all_entities then
         all_entities = {}

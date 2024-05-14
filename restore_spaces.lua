@@ -29,7 +29,6 @@ function mod.saveEnvironmentState()
 
         local initial_space = hs.spaces.activeSpaceOnScreen(screen)
         local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        local screen_windows = mod.retrieveEnvironmentEntities("windows", screen)
 
         mod.delayExecution(mod.screen_pause)
         for _, space in pairs(screen_spaces) do
@@ -40,7 +39,7 @@ function mod.saveEnvironmentState()
             hs.spaces.gotoSpace(space)
             mod.delayExecution(mod.space_pause)
             
-            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
+            local space_windows = mod.retrieveEnvironmentEntities("windows", screen)
             for _, window in ipairs(space_windows) do
                 local window_state, window_id = mod.getWindowState(window)
                 window_state["screen"] = tonumber(screen_id)
@@ -97,7 +96,6 @@ function mod.applyEnvironmentState()
 
         local initial_space = hs.spaces.activeSpaceOnScreen(screen)
         local screen_spaces = mod.retrieveEnvironmentEntities("spaces", screen)
-        local screen_windows = mod.retrieveEnvironmentEntities("windows", screen)
 
         mod.delayExecution(mod.screen_pause)
         for _, space in pairs(screen_spaces) do

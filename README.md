@@ -97,6 +97,7 @@ Following features have already been implemented:
 Current features under development; any help is appreciated:
 
 - Add a `notifyUser` call if `gotoSpace` fails due too short pause setting.
+- Fix restore for windows that have empty title.
 - Fix restore for two windows in Fullscreen, Tile left and Tile right, which
   current does not work (afaik, cannot be implemented).
 - Ensure save/apply do not consider hidden windows.
