@@ -1,5 +1,6 @@
 local hs = {}
 --hs.chooser = require 'hs.chooser'
+hs.application = require 'hs.application'
 hs.fnutils = require 'hs.fnutils'
 hs.inspect = require 'hs.inspect'
 hs.hotkey = require 'hs.hotkey'
@@ -138,7 +139,7 @@ end
 
 --[
 function mod.validateSpaces(all_spaces, verbose)
-    verbose = true --verbose or mod.verbose
+    verbose = verbose or mod.verbose
     local function extractNestedTable(key_sequence, table)
         local current_table = table
         for _, key in ipairs(key_sequence) do

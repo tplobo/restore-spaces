@@ -93,6 +93,8 @@ Following features have already been implemented:
 - Fix restore for when current number of screens is different than the number
   of saved ones.
 - Check functionalities if/when space IDs change with space deletion/creation.
+- Add a workaround to deal with the phantom dashboard space (_vide_ **Known
+  Issues**).
 
 Current features under development; any help is appreciated:
 
@@ -108,8 +110,6 @@ Current features under development; any help is appreciated:
   manipulation is limited).
 - Modify functions to create "profiles" instead of "environment" states, as
   to allow for multiply profiles in the same environment.
-- Add a workaround to deal with the phantom dashboard space (_vide_ **Known
-  Issues**).
 - Add tests with mocking, due to the dependence on mac features.
 - ...
 
@@ -133,13 +133,18 @@ Current features under development; any help is appreciated:
      ...
    ```
 
-   The current studied solution is to forcefully deactivate the
-   dashboard, but it does not always work:
+   The solution of forcefully deactivating the dashboard [has been
+   studied](https://discussions.apple.com/thread/255600670), but it does
+   not work and there are [no alternative official solutions
+   ](https://forums.developer.apple.com/forums/thread/751143) so far:
 
    ```
    defaults write com.apple.dashboard mcx-disabled -boolean YES
    killall Dock
    ```
+
+   Instead, the `plist` file is read and used to validate the list of spaces
+   used to save the environment state.
 
 1. There are no official APIs for putting two windows in split-view fullscreen
    mode, so the current approach is to place all windows that had a fullscreen
