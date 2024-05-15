@@ -100,6 +100,8 @@ Current features under development; any help is appreciated:
 
 - Add a `notifyUser` call if `gotoSpace` fails due too short pause setting.
 - Fix restore for windows that have empty title.
+- Fix restore for windows that changed their ID after app restart (_vide_
+  **Known Issues**).
 - Fix restore for two windows in Fullscreen, Tile left and Tile right, which
   current does not work (afaik, cannot be implemented).
 - Ensure save/apply do not consider hidden windows.
@@ -150,3 +152,6 @@ Current features under development; any help is appreciated:
    mode, so the current approach is to place all windows that had a fullscreen
    state (split-view or not) into single fullscreen. Split-view has to be set
    manually by the user (with the mouse) after calling `applyEnvironmentState`.
+
+1. Window IDs change when you close/open an app. The current implementation
+   needs to be changed to take into account this.
