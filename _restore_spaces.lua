@@ -53,9 +53,9 @@ end
 function mod.issueVerbose(text, verbose)
     verbose = verbose or mod.verbose
     if verbose then
-        print(text)
-    else
-        -- do nothing
+        local info = debug.getinfo(2, "n")
+        local calling_function = info and info.name or "unknown"
+        print("(" .. calling_function .. ") " .. text)
     end
 end
 
@@ -136,9 +136,9 @@ function mod.processDataInFile(case, data)
     return contents
 end
 
---[[
-function mod.validateSpaces()
-    --TODO: check args compatible with retrieveEnvironmentEntities
+--[
+function mod.validateSpaces(all_spaces, verbose)
+    verbose = true --verbose or mod.verbose
     local function extractNestedTable(key_sequence, table)
         local current_table = table
         for _, key in ipairs(key_sequence) do
@@ -160,25 +160,39 @@ function mod.validateSpaces()
         print("Failed to read plist file")
     end
 
-    local key_sequence = {
-        "SpacesDisplayConfiguration",
-        "Management Data",
-        "Monitors",
-        1, --TODO: look for the index of the appropriate screen, accept nil for all screens
-        "Spaces",
-    }
-    local spaces_info = extractNestedTable(key_sequence, plist_spaces)
-
-    local valid_spaces = {}
     local count = 0
-    for _, value in ipairs(spaces_info) do
-        if value["uuid"] ~= "dashboard" then
-            count = count + 1
-            valid_spaces[count] = value["id64"]
+    local valid_spaces = {}
+    local all_screens = hs.screen.allScreens()
+    for screen_i in ipairs(all_screens) do
+        local key_sequence = {
+            "SpacesDisplayConfiguration",
+            "Management Data",
+            "Monitors",
+            screen_i,
+            "Spaces",
+        }
+        local all_spaces_info = extractNestedTable(key_sequence, plist_spaces)
+        for _, space_info in ipairs(all_spaces_info) do
+            local uuid = space_info["uuid"]
+            local id = space_info["id64"]
+            if uuid ~= "dashboard" then
+                count = count + 1
+                valid_spaces[count] = id
+            end
+            local text = "screen: " .. screen_i .. ", space id: " .. id
+            text = text .. ", space uuid:  " .. uuid
+            mod.issueVerbose(text, verbose)
         end
     end
-    print(hs.inspect(valid_spaces))
-    return valid_spaces
+
+    local validated_spaces = {}
+    for _, space in ipairs(all_spaces) do
+        if hs.fnutils.contains(valid_spaces, space) then
+            table.insert(validated_spaces, space)
+        end
+    end
+
+    return validated_spaces
 end
 --]]
 
@@ -205,18 +219,21 @@ function mod.retrieveEnvironmentEntities(entity, screen, verbose)
     elseif entity == "spaces" then
         if screen then
             all_entities = hs.spaces.spacesForScreen(screen:id())
-            --TODO: mod.validateSpaces(all_spaces, screen)
         else
             all_entities = {}
             local all_screens = hs.screen.allScreens()
             for _, scr in ipairs(all_screens) do
                 local screen_spaces = hs.spaces.spacesForScreen(scr:id())
-                if not screen_spaces then screen_spaces = {} end
-                for _, space in ipairs(screen_spaces) do
-                    table.insert(all_entities, space)
+                if not screen_spaces then 
+                    screen_spaces = {} 
+                else
+                    for _, space in ipairs(screen_spaces) do
+                        table.insert(all_entities, space)
+                    end
                 end
             end
         end
+        all_entities = mod.validateSpaces(all_entities)
     elseif entity == "windows" then
         local all_windows = hs.window.visibleWindows()
         all_entities = hs.fnutils.filter(all_windows, isWindowOnScreen)
