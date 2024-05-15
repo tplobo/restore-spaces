@@ -79,7 +79,7 @@ function mod.applyEnvironmentState()
         error("Undefined environment name!")
     end
 
-    --TODO: open apps if they are not open
+    --TODO: open apps if they are not open?
     --TODO: close apps if they are not saved?
 
     mod.data_wins = mod.processDataInFile("read","windows")
@@ -106,7 +106,7 @@ function mod.applyEnvironmentState()
             hs.spaces.gotoSpace(space)
             mod.delayExecution(mod.space_pause)
             
-            local space_windows = mod.retrieveEnvironmentEntities("visible", screen)
+            local space_windows = mod.retrieveEnvironmentEntities("windows", screen)
             for _, window in ipairs(space_windows) do
                 local window_state, window_id = mod.getWindowState(window)
                 window_state = env_state[window_id]
