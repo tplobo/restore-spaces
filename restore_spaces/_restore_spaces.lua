@@ -14,7 +14,7 @@ hs.json = require 'hs.json'
 
 -- Requires installing the `spaces` module
 -- See: https://github.com/asmagill/hs._asm.spaces
-hs.spaces = require 'hs.spaces'
+hs.spaces = require 'hs.spaces.spaces'
 
 -- Plumbing module (inner functions)
 local mod = {}
@@ -124,7 +124,7 @@ function mod.processDataInFile(case, data)
         error("Unknown data: " .. data)
     end
     local file_name = "data_" .. data
-    local rel_path = '/.hammerspoon/' .. file_name .. '.json'
+    local rel_path = '/.hammerspoon/hs/tmp/' .. file_name .. '.json'
     local abs_path = os.getenv('HOME') .. rel_path
 
     if case == "write" then
@@ -320,6 +320,9 @@ end
 
 function mod.setWindowState(window,window_state,space_map)
     if not window_state then
+        --TODO: use window title to identify window (this creastes a
+        --      problem if the window has multiple tabs)
+        --TODO: if not found, minimize window
         window:minimize()
         return
     end

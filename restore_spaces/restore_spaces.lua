@@ -3,10 +3,10 @@ hs.inspect = require 'hs.inspect'
 
 -- Requires installing the `spaces` module
 -- See: https://github.com/asmagill/hs._asm.spaces
-hs.spaces = require 'hs.spaces'
+hs.spaces = require 'hs.spaces.spaces'
 
--- Import plumbing (inner functions)
-local mod = require("_restore_spaces")
+-- Import plumbing (private functions)
+local mod = require 'hs.restore_spaces._restore_spaces'
 
 -- Global variables (defaults)
 --mod.mode = "quiet" -- "quiet" or "verbose"
@@ -121,5 +121,13 @@ function mod.applyEnvironmentState()
     end
     mod.notifyUser("apply")
 end
+
+--[[
+--TODO: function mod.turnoffEnvironment()
+-- save environment state, close each app running, and turn-off
+function mod.turnoff()
+    os.execute("osascript -e 'tell app \"System Events\" to shut down'")
+end
+--]]
 
 return mod

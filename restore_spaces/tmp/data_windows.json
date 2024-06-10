@@ -1,0 +1,212 @@
+{
+  "laptop" : {
+    "24149" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Code",
+      "space" : 2305,
+      "frame" : {
+        "y" : 44,
+        "w" : 1940,
+        "x" : 0,
+        "h" : 1219
+      },
+      "title" : "~\/.hammerspoon — .hammerspoon"
+    },
+    "270" : {
+      "fullscreen" : "right",
+      "screen" : 1,
+      "app" : "‎WhatsApp",
+      "space" : 32,
+      "frame" : {
+        "y" : 43,
+        "w" : 912,
+        "x" : 1144,
+        "h" : 1286
+      },
+      "title" : "‎WhatsApp"
+    },
+    "22709" : {
+      "fullscreen" : "left",
+      "screen" : 1,
+      "app" : "Rakuten Viber",
+      "space" : 32,
+      "frame" : {
+        "y" : 43,
+        "w" : 1132,
+        "x" : 0,
+        "h" : 1286
+      },
+      "title" : "Rakuten Viber"
+    },
+    "85" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Finder",
+      "space" : 2350,
+      "frame" : {
+        "y" : 209,
+        "w" : 1380,
+        "x" : 174,
+        "h" : 876
+      },
+      "title" : "66 Aid of the Tempest _ Critical Role _ Campaign 3, Episode 66"
+    },
+    "333" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Firefox",
+      "space" : 15,
+      "frame" : {
+        "y" : 44,
+        "w" : 1858,
+        "x" : -0,
+        "h" : 1219
+      },
+      "title" : "split `detectEnvironment` into smaller functions · tplobo\/restore-spaces@a36174a"
+    },
+    "38020" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "TV",
+      "space" : 2999,
+      "frame" : {
+        "y" : 44,
+        "w" : 1040,
+        "x" : 0,
+        "h" : 1211
+      },
+      "title" : "TV"
+    },
+    "37725" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Sourcetree",
+      "space" : 2303,
+      "frame" : {
+        "y" : 44,
+        "w" : 1745,
+        "x" : 0,
+        "h" : 1218
+      },
+      "title" : "restore-spaces (Git)"
+    },
+    "96" : {
+      "fullscreen" : "yes",
+      "screen" : 1,
+      "app" : "Calendar",
+      "space" : 1530,
+      "frame" : {
+        "y" : 43,
+        "w" : 2056,
+        "x" : 0,
+        "h" : 1286
+      },
+      "title" : "Calendar"
+    },
+    "24151" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Code",
+      "space" : 2348,
+      "frame" : {
+        "y" : 44,
+        "w" : 2056,
+        "x" : 0,
+        "h" : 1219
+      },
+      "title" : "~\/Documents\/VSCODE\/CONFIG\/config — config"
+    },
+    "25590" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Finder",
+      "space" : 3191,
+      "frame" : {
+        "y" : 209,
+        "w" : 1380,
+        "x" : 174,
+        "h" : 876
+      },
+      "title" : "iTunes"
+    },
+    "342" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Firefox",
+      "space" : 2308,
+      "frame" : {
+        "y" : 44,
+        "w" : 1628,
+        "x" : 0,
+        "h" : 1210
+      },
+      "title" : "YouTube"
+    },
+    "107" : {
+      "fullscreen" : "right",
+      "screen" : 1,
+      "app" : "Notes",
+      "space" : 1189,
+      "frame" : {
+        "y" : 43,
+        "w" : 1028,
+        "x" : 1028,
+        "h" : 1286
+      },
+      "title" : "Notes"
+    },
+    "25600" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Finder",
+      "space" : 3191,
+      "frame" : {
+        "y" : 506,
+        "w" : 920,
+        "x" : 900,
+        "h" : 492
+      },
+      "title" : "Music"
+    },
+    "24150" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Code",
+      "space" : 3022,
+      "frame" : {
+        "y" : 44,
+        "w" : 2056,
+        "x" : 0,
+        "h" : 1219
+      },
+      "title" : "~\/Documents\/VSCODE\/CONFIG\/restore-spaces — restore-spaces"
+    },
+    "99" : {
+      "fullscreen" : "left",
+      "screen" : 1,
+      "app" : "Reminders",
+      "space" : 1189,
+      "frame" : {
+        "y" : 43,
+        "w" : 1016,
+        "x" : 0,
+        "h" : 1286
+      },
+      "title" : "Reminders"
+    },
+    "399" : {
+      "fullscreen" : "no",
+      "screen" : 1,
+      "app" : "Safari",
+      "space" : 2351,
+      "frame" : {
+        "y" : 44,
+        "w" : 1822,
+        "x" : 0,
+        "h" : 1210
+      },
+      "title" : "bootstrap\/bootstrap.sh at master · astsu777\/bootstrap"
+    }
+  }
+}
