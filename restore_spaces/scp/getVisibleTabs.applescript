@@ -20,16 +20,14 @@ on getWindowTabs(appName, rightTabKeys, leftTabKeys)
 		activate
 		
 		-- Switch to first tab:
-		tell application "System Events" to keystroke "1" using command down
-		delay tabDelay
 		set firstTitle to name of front window
 		copy firstTitle to the end of the tabList
 		copy firstTitle to the end of the tabBuffer
 		copy firstTitle to the end of the firstTabs
 		
+		set keyCode to item 1 of rightTabKeys
+		set keyModifiers to item 2 of rightTabKeys
 		repeat until (counter > maxTabs)
-			set keyCode to item 1 of rightTabKeys
-			set keyModifiers to item 2 of rightTabKeys
 			tell application "System Events" to key code keyCode using (items of keyModifiers)
 			delay tabDelay
 			set currentTitle to name of front window
@@ -68,12 +66,22 @@ on getWindowTabs(appName, rightTabKeys, leftTabKeys)
 			set counter to counter + 1
 		end repeat
 		
-		-- Remove the first (bufferSize - 1) entries from the end of tabList
 		if pruneFlag is true then
 			set tabListLength to length of tabList
+			set pruneCount to (bufferSize - 1)
+			
+			-- Remove the first (bufferSize - 1) entries from the end of tabList
 			if tabListLength ³ bufferSize then
-				set tabList to items 1 through (tabListLength - bufferSize + 1) of tabList
+				set tabList to items 1 through (tabListLength - pruneCount) of tabList
 			end if
+			
+			-- Go back (bufferSize - 1) tabs to the left
+			set keyCode to item 1 of leftTabKeys
+			set keyModifiers to item 2 of leftTabKeys
+			repeat pruneCount times
+				tell application "System Events" to key code keyCode using (items of keyModifiers)
+				delay tabDelay
+			end repeat
 		end if
 		
 	end tell
