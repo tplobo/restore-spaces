@@ -1,4 +1,4 @@
-local hs = {}
+--local hs = {}
 hs.inspect = require 'hs.inspect'
 
 -- Requires installing the `spaces` module

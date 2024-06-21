@@ -1,4 +1,46 @@
-on getWindowTabs(appName, rightTabKeys, leftTabKeys)
+--######################################################################--
+-- GET KEYS TO JUMP TABS
+--######################################################################--
+on getAppTabJumpKeys(appName)
+	
+	-- Key codes to jump one tab to the right and one tab to the left
+	-- (original combination for Firefox: key code 121 using control down)
+	set keyList to {"app", "right-tab key code and modifiers", "left-tab key code and modifiers"}
+	set end of keyList to {"Firefox", {48, {control down}}, {48, {control down, shift down}}}
+	set end of keyList to {"Google Chrome", {48, {control down}}, {48, {control down, shift down}}}
+	set end of keyList to {"Safari", {48, {control down}}, {48, {control down, shift down}}}
+	set end of keyList to {"other", {48, {control down}}, {48, {control down, shift down}}}
+	
+	-- Find appropriate the key code
+	set rightTabKeys to false
+	set leftTabKeys to false
+	repeat with i in keyList
+		if item 1 of i is appName then
+			set rightTabKeys to item 2 of i
+			set leftTabKeys to item 3 of i
+			exit repeat
+		end if
+	end repeat
+	if rightTabKeys is false or leftTabKeys is false then
+		log "Unknown key combination for application: " & appName
+		log "... using default key combinations for jumping to right and left tabs."
+		repeat with i in keyList
+			if item 1 of i is "other" then
+				set rightTabKeys to item 2 of i
+				set leftTabKeys to item 3 of i
+				exit repeat
+			end if
+		end repeat
+	end if
+	
+	return {rightTabKeys, leftTabKeys}
+	
+end getAppTabJumpKeys
+
+--######################################################################--
+-- GET ALL TABS OF A SINGLE WINDOW
+--######################################################################--
+on getWindowTabs(appName)
 	
 	-- Configuration
 	set tabDelay to 0.1
@@ -12,6 +54,11 @@ on getWindowTabs(appName, rightTabKeys, leftTabKeys)
 	set tabBuffer to {}
 	set firstTabs to {}
 	set counterIdenticalConsecutives to 0
+	
+	-- Define key combinations to jump to right and left tabs
+	set keyCombinations to getAppTabJumpKeys(appName)
+	set rightTabKeys to item 1 of keyCombinations
+	set leftTabKeys to item 2 of keyCombinations
 	
 	set pruneFlag to false
 	
@@ -71,7 +118,8 @@ on getWindowTabs(appName, rightTabKeys, leftTabKeys)
 			set pruneCount to (bufferSize - 1)
 			
 			-- Remove the first (bufferSize - 1) entries from the end of tabList
-			if tabListLength ³ bufferSize then
+			if tabListLength > bufferSize or tabListLength is equal to bufferSize then
+				--if tabListLength ³ bufferSize then
 				set tabList to items 1 through (tabListLength - pruneCount) of tabList
 			end if
 			
@@ -93,51 +141,15 @@ on getWindowTabs(appName, rightTabKeys, leftTabKeys)
 	
 end getWindowTabs
 
-on getAppTabJumpKeys(appName)
-	
-	-- Key codes to jump one tab to the right
-	set keyList to {"app", "right-tab key code and modifiers", "left-tab key code and modifiers"}
-	set end of keyList to {"Firefox", {48, {control down}}, {48, {control down, shift down}}} -- original: key code 121 using control down
-	set end of keyList to {"Google Chrome", {48, {control down}}, {48, {control down, shift down}}}
-	set end of keyList to {"Safari", {48, {control down}}, {48, {control down, shift down}}}
-	set end of keyList to {"other", {48, {control down}}, {48, {control down, shift down}}}
-	
-	-- Find appropriate the key code
-	set rightTabKeys to false
-	set leftTabKeys to false
-	repeat with i in keyList
-		if item 1 of i is appName then
-			set rightTabKeys to item 2 of i
-			set leftTabKeys to item 3 of i
-			exit repeat
-		end if
-	end repeat
-	if rightTabKeys is false or leftTabKeys is false then
-		log "Unknown key combination for application: " & appName
-		log "Using default right and left tab key combinations."
-		repeat with i in keyList
-			if item 1 of i is "other" then
-				set rightTabKeys to item 2 of i
-				set leftTabKeys to item 3 of i
-				exit repeat
-			end if
-		end repeat
-	end if
-	
-	return {rightTabKeys, leftTabKeys}
-	
-end getAppTabJumpKeys
-
+--######################################################################--
+-- GET TABS OF ALL WINDOWS IN A SPACE
+--######################################################################--
 on getVisibleTabs(appName)
 	
 	-- Configuration
 	set debugMode to false
-	set windowDelay to 0.1
-	
-	-- Define key combinations to jump to right and left tabs
-	set keyCombinations to getAppTabJumpKeys(appName)
-	set rightTabKeys to item 1 of keyCombinations
-	set leftTabKeys to item 2 of keyCombinations
+	set windowDelay to 0.2
+	set reportDelimiter to "###"
 	
 	-- Initialize the list of tab lists
 	set visibleTabs to {}
@@ -167,23 +179,27 @@ on getVisibleTabs(appName)
 		-- Iterate over each visible window
 		repeat with currentWindow in visibleWindows
 			tell application "System Events"
-				set currentTitle to title of currentWindow
-				repeat
-					keystroke "`" using command down
-					delay windowDelay
-					set appWindows to every window of process appName
-					repeat with singleWindow in appWindows
-						if focused of singleWindow is true then
-							set frontWindow to singleWindow
-							exit repeat
-						end if
+				tell process appName
+					set frontWindow to (first window whose value of attribute "AXMain" is true)
+					set currentTitle to value of attribute "AXTitle" of frontWindow
+					repeat
+						keystroke "`" using command down
+						delay windowDelay
+						set appWindows to every window
+						repeat with singleWindow in appWindows
+							if value of attribute "AXMain" of singleWindow is true then
+								set frontWindow to singleWindow
+								exit repeat
+							end if
+						end repeat
+						set frontTitle to value of attribute "AXTitle" of frontWindow
+						if frontTitle is equal to currentTitle then exit repeat
 					end repeat
-					set frontTitle to title of frontWindow
-					if frontTitle is equal to currentTitle then exit repeat
-				end repeat
+				end tell
 			end tell
-			set windowTabs to my getWindowTabs(appName, rightTabKeys, leftTabKeys)
-			set end of visibleTabs to {currentTitle, windowTabs}
+			set windowTabs to my getWindowTabs(appName)
+			set reportTitle to reportDelimiter & currentTitle & reportDelimiter
+			set end of visibleTabs to {reportTitle, windowTabs}
 		end repeat
 		
 	end tell
@@ -192,4 +208,20 @@ on getVisibleTabs(appName)
 	
 end getVisibleTabs
 
-getVisibleTabs("Firefox")
+--######################################################################--
+-- RUN
+--######################################################################--
+on run arguments
+	set defaultName to "Safari"
+	if ((count of arguments) > 0) then
+		set appName to item 1 of arguments
+	else
+		set appName to defaultName
+	end if
+	try
+		set visibleTabs to my getVisibleTabs(appName)
+	on error errMsg
+		return errMsg
+	end try
+	return visibleTabs
+end run

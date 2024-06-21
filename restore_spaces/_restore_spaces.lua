@@ -1,4 +1,4 @@
-local hs = {}
+--local hs = {}
 --hs.chooser = require 'hs.chooser'
 hs.application = require 'hs.application'
 hs.fnutils = require 'hs.fnutils'
@@ -22,6 +22,7 @@ local mod = {}
 -- Global variables (defaults)
 mod.data_wins = {} -- collected info for each window
 mod.data_envs = {} -- collected info for each environment
+mod.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
 
 function mod.paddedToStr(int)
     return string.format("%03d", int)
@@ -123,8 +124,8 @@ function mod.processDataInFile(case, data)
     else
         error("Unknown data: " .. data)
     end
-    local file_name = "data_" .. data
-    local rel_path = '/.hammerspoon/hs/tmp/' .. file_name .. '.json'
+    local file_name = "data_" .. data.. '.json'
+    local rel_path = '/.hammerspoon/hs/restore_spaces/tmp/' .. file_name
     local abs_path = os.getenv('HOME') .. rel_path
 
     if case == "write" then
@@ -309,8 +310,37 @@ function mod.getWindowState(window)
 
     --TODO: check if app window is hidden
 
-    window_state["title"] = window:title()
-    window_state["app"] = window:application():name()
+    local window_app = window:application():name()
+    local flag_applescript = false
+    for _, multitab_app in ipairs(mod.multitab_apps) do
+        if window_app == multitab_app then
+            flag_applescript = true
+        end
+    end
+
+    local window_title = window:title()
+
+    
+    if flag_applescript then
+        local file_name = 'getVisibleTabs.applescript'
+        local rel_path = '/.hammerspoon/hs/restore_spaces/scp/' .. file_name
+        local abs_path = os.getenv('HOME') .. rel_path
+
+        local command = "/usr/bin/osascript " .. abs_path .. " " .. window_app
+        print(command)
+        local output, status, exitType, rc = hs.execute(command,true)
+        
+        print(hs.inspect(output))
+        print(status)
+        print(exitType)
+        print(rc)
+        --TODO: chose what to save in "title"
+    else
+        window_state["title"] = window_title
+    end
+
+
+    window_state["app"] = window_app
     local fullscreen_state, frame_state = mod.getFrameState(window)
     window_state["fullscreen"] = fullscreen_state
     window_state["frame"] = frame_state
