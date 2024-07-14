@@ -22,6 +22,7 @@ local mod = {}
 -- Global variables (defaults)
 mod.data_wins = {} -- collected info for each window
 mod.data_envs = {} -- collected info for each environment
+mod.config_path = "scp/scp_config"
 mod.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
 
 function mod.paddedToStr(int)
@@ -30,6 +31,12 @@ end
 
 function mod.delayExecution(delay)
     hs.timer.usleep(1e6 * delay)
+end
+
+function mod.packagePath(filepath)
+    local rel_path = "/.hammerspoon/hs/restore_spaces/" .. filepath
+    local abs_path = os.getenv('HOME') .. rel_path
+    return abs_path
 end
 
 function mod.recursiveKeysAreStrings(arg, verbose)
@@ -80,6 +87,46 @@ function mod.notifyUser(case,verbose)
     hs.notify.new(message):send()
 end
 
+function mod.getPlistPath()
+    local plist_path = mod.packagePath(mod.config_path .. ".plist")
+    return plist_path
+end
+
+function mod.processPlistConfig(case)
+    local plist_path = mod.getPlistPath()
+
+    if case == 'create' then
+        local json_path = mod.packagePath(mod.config_path .. ".json")
+        local json_file = io.open(json_path, "r")
+        if not json_file then
+            error("Unable to locate: " .. json_path)
+        end
+        local json_contents = json_file:read("*a")
+        json_file:close()
+        
+        local json_table, _, err = hs.json.decode(json_contents)
+        if not json_table then
+            error("Failed to parse JSON: " .. err)
+        end
+
+        local success = hs.plist.write(plist_path, json_table, true)
+        if not success then
+            error("Failed to create PLIST file")
+        end
+
+    elseif case == 'destroy' then
+
+        local success, err = os.remove(plist_path)
+        if not success then
+            error("Failed to delete PLIST file: " .. err)
+        end
+
+    else
+        error("Unknown routine to 'processPlistConfig' in case: " .. case)
+    end
+
+end
+
 function mod.processDataInFile(case, data)
     local function readFile(abs_path)
         local file = io.open(abs_path, 'r')
@@ -124,9 +171,8 @@ function mod.processDataInFile(case, data)
     else
         error("Unknown data: " .. data)
     end
-    local file_name = "data_" .. data.. '.json'
-    local rel_path = '/.hammerspoon/hs/restore_spaces/tmp/' .. file_name
-    local abs_path = os.getenv('HOME') .. rel_path
+    local filepath = "tmp/data_" .. data.. ".json"
+    local abs_path = mod.packagePath(filepath)
 
     if case == "write" then
         writeFile(abs_path, contents)
@@ -138,7 +184,6 @@ function mod.processDataInFile(case, data)
     return contents
 end
 
---[
 function mod.validateSpaces(all_spaces, verbose)
     verbose = verbose or mod.verbose
     local function extractNestedTable(key_sequence, table)
@@ -196,7 +241,6 @@ function mod.validateSpaces(all_spaces, verbose)
 
     return validated_spaces
 end
---]]
 
 function mod.retrieveEnvironmentEntities(entity, screen, verbose)
     local function validateScreen(arg)
@@ -322,11 +366,13 @@ function mod.getWindowState(window)
 
     
     if flag_applescript then
-        local file_name = 'getVisibleTabs.applescript'
-        local rel_path = '/.hammerspoon/hs/restore_spaces/scp/' .. file_name
-        local abs_path = os.getenv('HOME') .. rel_path
+        local script_path = "scp/getVisibleTabs.applescript"
+        local abs_path = mod.packagePath(script_path)
 
-        local command = "/usr/bin/osascript " .. abs_path .. " " .. window_app
+        local osascript = "/usr/bin/osascript"
+        local plist_path = mod.getPlistPath()
+        local args = window_app .. " " .. plist_path
+        local command = osascript .. " " .. abs_path .. " " .. args
         print(command)
         local output, status, exitType, rc = hs.execute(command,true)
         

@@ -15,7 +15,20 @@ mod.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 mod.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 
+
 function mod.saveEnvironmentState()
+    mod.processPlistConfig("create")
+    mod._saveEnvironmentState()
+    mod.processPlistConfig("destroy")
+end
+
+function mod.applyEnvironmentState()
+    mod.processPlistConfig("create")
+    mod._applyEnvironmentState()
+    mod.processPlistConfig("destroy")
+end
+
+function mod._saveEnvironmentState()
     local save_new_env = true
     local env_name = mod.processEnvironment(save_new_env)
     if not env_name then
@@ -72,7 +85,7 @@ function mod.saveEnvironmentState()
     mod.notifyUser("save")
 end
 
-function mod.applyEnvironmentState()
+function mod._applyEnvironmentState()
     local save_new_env = false
     local env_name, env = mod.processEnvironment(save_new_env)
     if not env_name then

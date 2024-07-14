@@ -1,0 +1,31 @@
+{
+  "debugMode": false,
+  "windowDelay": 0.2,
+  "tabDelay": 0.1,
+  "bufferSize": 3,
+  "maxTabs": 150,
+  "maxIdenticalConsecutives": 5,
+  "reportDelimiter": "###",
+  "listTabShortcuts": [
+    {
+      "application": "Firefox",
+      "rightTabShortcut": [48, ["control"]],
+      "leftTabShortcut": [48, ["control", "shift"]]
+    },
+    {
+      "application": "Google Chrome",
+      "rightTabShortcut": [48, ["control"]],
+      "leftTabShortcut": [48, ["control", "shift"]]
+    },
+    {
+      "application": "Safari",
+      "rightTabShortcut": [48, ["control"]],
+      "leftTabShortcut": [48, ["control", "shift"]]
+    },
+    {
+      "application": "other",
+      "rightTabShortcut": [48, ["control"]],
+      "leftTabShortcut": [48, ["control", "shift"]]
+    }
+  ]
+}
