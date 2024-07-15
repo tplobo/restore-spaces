@@ -18,8 +18,8 @@ end script
 
 script Config
 	property debugMode : false
-	property windowDelay : 0.2
-	property tabDelay : 0.1
+	property windowDelay : 0.3
+	property tabDelay : 0.15
 	property bufferSize : 3
 	property maxTabs : 150
 	property maxIdenticalConsecutives : 5
@@ -139,7 +139,7 @@ end getModifierFromString
 --######################################################################--
 -- GET ALL TABS OF A SINGLE WINDOW
 --######################################################################--
-on getWindowTabs(appName, allConfig)
+on getWindowTabs(appName, Config)
 	
 	-- Initialization
 	set tabList to {}
@@ -149,7 +149,7 @@ on getWindowTabs(appName, allConfig)
 	set counterIdenticalConsecutives to 0
 	
 	-- Define key combinations to jump to right and left tabs
-	set keyCombinations to getAppTabJumpKeys(appName, allConfig)
+	set keyCombinations to getAppTabJumpKeys(appName, Config)
 	set rightTabKeys to item 1 of keyCombinations
 	set leftTabKeys to item 2 of keyCombinations
 	
@@ -168,9 +168,9 @@ on getWindowTabs(appName, allConfig)
 		set keyCode to item 1 of rightTabKeys
 		set keyList to item 2 of rightTabKeys
 		set keyModifiers to my getModifierFromString(keyList)
-		repeat until (counter > maxTabs of allConfig)
+		repeat until (counter > maxTabs of Config)
 			tell application "System Events" to key code keyCode using (items of keyModifiers)
-			delay tabDelay of allConfig
+			delay tabDelay of Config
 			set currentTitle to name of front window
 			
 			-- Copy URL instead:
@@ -179,7 +179,7 @@ on getWindowTabs(appName, allConfig)
 			--copy (the clipboard) to the end of the |tabList|
 			
 			-- Add the current tab to the buffer
-			if (length of tabBuffer) is equal to (bufferSize of allConfig) then
+			if (length of tabBuffer) is equal to (bufferSize of Config) then
 				-- Remove the oldest entry from the buffer
 				set tabBuffer to items 2 through -1 of tabBuffer
 			end if
@@ -188,7 +188,7 @@ on getWindowTabs(appName, allConfig)
 			-- Check for identical consecutive tabs
 			if (currentTitle is equal to item -1 of tabList) then
 				set counterIdenticalConsecutives to counterIdenticalConsecutives + 1
-				if (counterIdenticalConsecutives is equal to maxIdenticalConsecutives of allConfig) then
+				if (counterIdenticalConsecutives is equal to maxIdenticalConsecutives of Config) then
 					exit repeat
 				end if
 			else
@@ -196,7 +196,7 @@ on getWindowTabs(appName, allConfig)
 			end if
 			
 			-- Check if we have looped back to the first tab
-			if (length of firstTabs) is less than (bufferSize of allConfig) then
+			if (length of firstTabs) is less than (bufferSize of Config) then
 				copy currentTitle to the end of the firstTabs
 			else if (tabBuffer is equal to firstTabs) then
 				set pruneFlag to true
@@ -209,11 +209,11 @@ on getWindowTabs(appName, allConfig)
 		
 		if pruneFlag is true then
 			set tabListLength to length of tabList
-			set pruneCount to ((bufferSize of allConfig) - 1)
+			set pruneCount to ((bufferSize of Config) - 1)
 			
 			-- Remove the first (bufferSize - 1) entries from the end of tabList
-			set checkGreater to (tabListLength > (bufferSize of allConfig))
-			set checkEqual to (tabListLength is equal to (bufferSize of allConfig))
+			set checkGreater to (tabListLength > (bufferSize of Config))
+			set checkEqual to (tabListLength is equal to (bufferSize of Config))
 			if checkGreater or checkEqual then
 				set tabList to items 1 through (tabListLength - pruneCount) of tabList
 			end if
@@ -224,7 +224,7 @@ on getWindowTabs(appName, allConfig)
 			set keyModifiers to my getModifierFromString(keyList)
 			repeat pruneCount times
 				tell application "System Events" to key code keyCode using (items of keyModifiers)
-				delay tabDelay of allConfig
+				delay tabDelay of Config
 			end repeat
 		end if
 		
@@ -233,21 +233,35 @@ on getWindowTabs(appName, allConfig)
 	log length of tabList
 	log tabList
 	
-	return tabList
+	-- Build delimited string with list of tab titles
+	set tabsString to ""
+	repeat with i from 1 to (count of tabList)
+		set currentItem to item i of tabList
+		set currentString to currentItem & (Config's reportDelimiter)
+		if i is 1 then
+			set tabsString to currentString
+		else
+			-- For all subsequent items, prepend the delimiter
+			set tabsString to tabsString & currentString
+		end if
+	end repeat
+	log tabsString
+	
+	return tabsString
 	
 end getWindowTabs
 
 --######################################################################--
 -- GET TABS OF ALL WINDOWS IN A SPACE
 --######################################################################--
-on getVisibleTabs(appName, allConfig)
+on getVisibleTabs(appName, Config)
 	
 	set visibleTabs to {}
 	tell application appName
 		
 		-- Get the list of windows of the application in the current space
 		tell application "System Events"
-			if debugMode of allConfig is true then
+			if debugMode of Config is true then
 				set appWindows to every window of process appName
 				log appWindows
 				repeat with singleWindow in appWindows
@@ -266,29 +280,31 @@ on getVisibleTabs(appName, allConfig)
 		activate
 		
 		-- Iterate over each visible window
-		repeat with currentWindow in visibleWindows
+		set processedWindowIDs to {}
+		repeat with i from 1 to count of visibleWindows
 			tell application "System Events"
 				tell process appName
 					set frontWindow to (first window whose value of attribute "AXMain" is true)
 					set currentTitle to value of attribute "AXTitle" of frontWindow
-					repeat
-						keystroke "`" using command down
-						delay windowDelay of allConfig
-						set appWindows to every window
-						repeat with singleWindow in appWindows
-							if value of attribute "AXMain" of singleWindow is true then
-								set frontWindow to singleWindow
-								exit repeat
-							end if
-						end repeat
-						set frontTitle to value of attribute "AXTitle" of frontWindow
-						if frontTitle is equal to currentTitle then exit repeat
-					end repeat
+					set currentWindowID to currentTitle & " - " & i
+					
+					-- Check if this window has already been processed
+					if currentWindowID is not in processedWindowIDs then
+						set end of processedWindowIDs to currentWindowID
+						
+						set windowTabs to my getWindowTabs(appName, Config)
+						set titleDelimiter to (reportDelimiter of Config) & (reportDelimiter of Config)
+						set reportTitle to titleDelimiter & currentTitle & titleDelimiter
+						set end of visibleTabs to {reportTitle, windowTabs}
+					end if
+					
+					-- Switch to the next window
+					if i < (count of visibleWindows) then
+						keystroke "`" using {command down}
+						delay (windowDelay of Config)
+					end if
 				end tell
 			end tell
-			set windowTabs to my getWindowTabs(appName, allConfig)
-			set reportTitle to (reportDelimiter of allConfig) & currentTitle & (reportDelimiter of allConfig)
-			set end of visibleTabs to {reportTitle, windowTabs}
 		end repeat
 		
 	end tell
@@ -314,7 +330,6 @@ on run arguments
 		set pathConfig to pathDefault
 	end if
 	Config's initializeFromPlist(pathConfig)
-	--set allConfig to Config's initializeFromPlist(pathConfig)
 	
 	try
 		set visibleTabs to my getVisibleTabs(appName, Config)

@@ -1,7 +1,7 @@
 {
   "debugMode": false,
-  "windowDelay": 0.2,
-  "tabDelay": 0.1,
+  "windowDelay": 0.3,
+  "tabDelay": 0.15,
   "bufferSize": 3,
   "maxTabs": 150,
   "maxIdenticalConsecutives": 5,

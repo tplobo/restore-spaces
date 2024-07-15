@@ -87,13 +87,28 @@ function mod.notifyUser(case,verbose)
     hs.notify.new(message):send()
 end
 
-function mod.getPlistPath()
+function mod.getPlistInfo(info)
     local plist_path = mod.packagePath(mod.config_path .. ".plist")
-    return plist_path
+    if info == "path" then
+        return plist_path
+    else
+        local key = info
+        local plistTable = hs.plist.read(plist_path)
+        if not plistTable then
+            error("Failed to read plist file at: " .. plist_path)
+        end
+        if plistTable[key] ~= nil then
+            local value = plistTable[key]
+            return value
+        else
+            -- Key does not exist, handle accordingly
+            return nil, "Key '" .. key .. "' does not exist in the plist file."
+        end
+    end
 end
 
 function mod.processPlistConfig(case)
-    local plist_path = mod.getPlistPath()
+    local plist_path = mod.getPlistInfo("path")
 
     if case == 'create' then
         local json_path = mod.packagePath(mod.config_path .. ".json")
@@ -348,7 +363,34 @@ function mod.askEnvironmentName(envs_list, verbose)
     return answer
 end
 
+function mod.buildTabList(output,report_delimiter)
+    local applescript_delimiter = ", "
+    local window_delimiter = report_delimiter .. report_delimiter
+    local start_pattern = window_delimiter .. applescript_delimiter
+    local end_pattern = applescript_delimiter .. window_delimiter
+    local list_delimiter = report_delimiter
+
+    local newline_pattern = "\n+$"
+    local processed_string = string.gsub(output, newline_pattern, end_pattern)
+
+    local tab_lists = {}
+    local window_pattern = start_pattern .. "(.-)" .. end_pattern
+    local tab_pattern = "([^" .. list_delimiter .. "]+)"
+    for window_string in processed_string:gmatch(window_pattern) do
+        local tab_titles = {}
+        for tab_string in window_string:gmatch(tab_pattern) do
+            table.insert(tab_titles, tab_string)
+        end
+        if #tab_titles > 0 then
+            table.insert(tab_lists, tab_titles)
+        end
+    end
+
+    return tab_lists
+end
+
 function mod.getWindowState(window)
+    --TODO: Change "WindowState" to "AppState"
     local window_state = {}
     local window_id = tostring(window:id())
 
@@ -363,23 +405,26 @@ function mod.getWindowState(window)
     end
 
     local window_title = window:title()
-
-    
     if flag_applescript then
         local script_path = "scp/getVisibleTabs.applescript"
         local abs_path = mod.packagePath(script_path)
 
         local osascript = "/usr/bin/osascript"
-        local plist_path = mod.getPlistPath()
+        local plist_path = mod.getPlistInfo("path")
         local args = window_app .. " " .. plist_path
         local command = osascript .. " " .. abs_path .. " " .. args
         print(command)
         local output, status, exitType, rc = hs.execute(command,true)
-        
         print(hs.inspect(output))
+
+        local report_delimiter = mod.getPlistInfo("reportDelimiter")
+        local tab_lists = mod.buildTabList(output,report_delimiter)
+        print(hs.inspect(tab_lists))
+
         print(status)
         print(exitType)
         print(rc)
+        error('test')
         --TODO: chose what to save in "title"
     else
         window_state["title"] = window_title
