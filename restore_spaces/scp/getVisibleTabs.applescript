@@ -18,8 +18,8 @@ end script
 
 script Config
 	property debugMode : false
-	property windowDelay : 0.3
-	property tabDelay : 0.15
+	property windowDelay : 0.2
+	property tabDelay : 0.1
 	property bufferSize : 3
 	property maxTabs : 150
 	property maxIdenticalConsecutives : 5

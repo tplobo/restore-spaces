@@ -33,6 +33,39 @@ function mod.delayExecution(delay)
     hs.timer.usleep(1e6 * delay)
 end
 
+function mod.contains(table, val)
+    for _, value in ipairs(table) do
+        if value == val then
+            return true
+        end
+    end
+    return false
+end
+
+function mod.list2table(list_var)
+    local table_var = {}
+    for _, element in ipairs(list_var) do
+        table_var[element] = {}
+    end
+    return table_var
+end
+
+function mod.list2dict(list_var)
+    local dict_var = {}
+    for i, element in ipairs(list_var) do
+        dict_var[tostring(i)] = element
+    end
+    return dict_var
+end
+
+function mod.table2list(table_var)
+    local list_var = {}
+    for _, value in pairs(table_var) do
+        table.insert(list_var, value)
+    end
+    return list_var
+end
+
 function mod.packagePath(filepath)
     local rel_path = "/.hammerspoon/hs/restore_spaces/" .. filepath
     local abs_path = os.getenv('HOME') .. rel_path
@@ -396,45 +429,19 @@ function mod.getWindowState(window)
 
     --TODO: check if app window is hidden
 
-    local window_app = window:application():name()
-    local flag_applescript = false
-    for _, multitab_app in ipairs(mod.multitab_apps) do
-        if window_app == multitab_app then
-            flag_applescript = true
-        end
-    end
-
-    local window_title = window:title()
-    if flag_applescript then
-        local script_path = "scp/getVisibleTabs.applescript"
-        local abs_path = mod.packagePath(script_path)
-
-        local osascript = "/usr/bin/osascript"
-        local plist_path = mod.getPlistInfo("path")
-        local args = window_app .. " " .. plist_path
-        local command = osascript .. " " .. abs_path .. " " .. args
-        print(command)
-        local output, status, exitType, rc = hs.execute(command,true)
-        print(hs.inspect(output))
-
-        local report_delimiter = mod.getPlistInfo("reportDelimiter")
-        local tab_lists = mod.buildTabList(output,report_delimiter)
-        print(hs.inspect(tab_lists))
-
-        print(status)
-        print(exitType)
-        print(rc)
-        error('test')
-        --TODO: chose what to save in "title"
-    else
-        window_state["title"] = window_title
-    end
-
-
-    window_state["app"] = window_app
     local fullscreen_state, frame_state = mod.getFrameState(window)
     window_state["fullscreen"] = fullscreen_state
     window_state["frame"] = frame_state
+    window_state["title"] = window:title()
+    window_state["app"] = window:application():name()
+    if mod.contains(mod.multitab_apps, window_state["app"]) then
+        window_state["multitab"] = true
+        window_state["tabs"] = {}
+    else
+        window_state["multitab"] = false
+        window_state["tabs"] = nil
+    end
+
     --mod.issueVerbose("get window " .. window_id, mod.verbose)
     return window_state, window_id
 end
