@@ -155,3 +155,14 @@ Current features under development; any help is appreciated:
 
 1. Window IDs change when you close/open an app. The current implementation
    needs to be changed to take into account this.
+
+1. The function `spaces.moveWindowtoSpace` function [stopped working in MacOS
+   14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
+   solution is to use the Hammerspoon app build by the `gartnera` user in
+   Github. This solution does not work when spaces are distributed across
+   multiple screens/monitors, so a [follow-up solution](https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567) was proposed by `cunha`,
+   which slightly increases the delay time of processing each Space. To avoid
+   this increase in unnecessary cases, a switch for this is implemented as the
+   `spaces_fixed_after_macOS14_5` global variable. It might become obsolete
+   after the `spaces` extension is updated in Hammerspoon to work with Sonoma
+   14.5.

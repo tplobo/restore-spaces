@@ -12,9 +12,10 @@ hs.timer = require 'hs.timer'
 hs.plist = require 'hs.plist'
 hs.json = require 'hs.json'
 
--- Requires installing the `spaces` module
--- See: https://github.com/asmagill/hs._asm.spaces
-hs.spaces = require 'hs.spaces.spaces'
+-- Use default `spaces` module:
+hs.spaces = require 'hs.spaces'
+-- Use development `spaces` module (https://github.com/asmagill/hs._asm.spaces)
+--hs.spaces = require 'hs.spaces_v04.spaces'
 
 -- Plumbing module (inner functions)
 local mod = {}
@@ -24,6 +25,11 @@ mod.data_wins = {} -- collected info for each window
 mod.data_envs = {} -- collected info for each environment
 mod.config_path = "scp/scp_config"
 mod.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
+mod.spaces_fixed_after_macOS14_5 = true
+
+function mod.isNaN(value)
+    return value ~= value
+end
 
 function mod.paddedToStr(int)
     return string.format("%03d", int)
@@ -33,8 +39,8 @@ function mod.delayExecution(delay)
     hs.timer.usleep(1e6 * delay)
 end
 
-function mod.contains(table, val)
-    for _, value in ipairs(table) do
+function mod.contains(tbl, val)
+    for _, value in pairs(tbl) do
         if value == val then
             return true
         end
@@ -64,6 +70,12 @@ function mod.table2list(table_var)
         table.insert(list_var, value)
     end
     return list_var
+end
+
+function mod.rename_key(dict_var,old_key,new_key)
+    dict_var[new_key] = dict_var[old_key]
+    dict_var[old_key] = nil
+    return dict_var
 end
 
 function mod.packagePath(filepath)
@@ -447,6 +459,9 @@ function mod.getWindowState(window)
 end
 
 function mod.setWindowState(window,window_state,space_map)
+    print("SETWINDOWSTATE START: window "..tostring(window))
+    print("window state "..hs.inspect(window_state))
+    print("space map "..hs.inspect(space_map))
     if not window_state then
         --TODO: use window title to identify window (this creastes a
         --      problem if the window has multiple tabs)
@@ -460,21 +475,42 @@ function mod.setWindowState(window,window_state,space_map)
     local fullscreen_state = window_state["fullscreen"]
     --local screen = window_state["screen"]
     local space = window_state["space"]
-
+    local target_space = nil
+    print("space "..tostring(space))
     if space_map then
         for _, pair in pairs(space_map) do
-            local original_space = pair[1]
-            local current_space = pair[2]
-            if original_space == space then
-                hs.spaces.moveWindowToSpace(window, current_space)
+            local old_space = pair[1]
+            local new_space = pair[2]
+            if old_space == space then
+                target_space = new_space
+                print("old space "..tostring(old_space))
+                print("new space "..tostring(new_space))
                 break
             end
         end
     else
-        hs.spaces.moveWindowToSpace(window, space)
+        target_space = space
     end
+    target_space = tonumber(target_space)
+
+    if mod.spaces_fixed_after_macOS14_5 then
+        hs.spaces.moveWindowToSpace(window, target_space)
+    else
+        -- solution by `cunha`
+        -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
+        local target_screen, _ = hs.spaces.spaceDisplay(target_space)
+        hs.spaces.moveWindowToSpace(window, target_space)
+        window:focus()
+        mod.delayExecution(0.4)
+        window:moveToScreen(target_screen)
+        window:focus()
+    end
+    --print("window id "..tostring(window:id()))
+    --print("target space "..tostring(target_space))
+
     mod.setFrameState(window, frame_state, fullscreen_state)
     --mod.issueVerbose("set window " .. window_id, mod.verbose)
+    print("SETWINDOWSTATE END: window: " .. type(window))
 end
 
 function mod.getFrameState(window)
@@ -637,7 +673,6 @@ function mod.rebuildEnvironment(env, env_name, all_screens, save_flag)
         end
         return table.unpack(all_counts)
     end
-
 
     if save_flag then
         mod.issueVerbose("Overwriting space order and map...", mod.verbose)
