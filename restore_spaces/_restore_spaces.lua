@@ -459,9 +459,6 @@ function mod.getWindowState(window)
 end
 
 function mod.setWindowState(window,window_state,space_map)
-    print("SETWINDOWSTATE START: window "..tostring(window))
-    print("window state "..hs.inspect(window_state))
-    print("space map "..hs.inspect(space_map))
     if not window_state then
         --TODO: use window title to identify window (this creastes a
         --      problem if the window has multiple tabs)
@@ -476,22 +473,19 @@ function mod.setWindowState(window,window_state,space_map)
     --local screen = window_state["screen"]
     local space = window_state["space"]
     local target_space = nil
-    print("space "..tostring(space))
     if space_map then
         for _, pair in pairs(space_map) do
             local old_space = pair[1]
             local new_space = pair[2]
             if old_space == space then
                 target_space = new_space
-                print("old space "..tostring(old_space))
-                print("new space "..tostring(new_space))
                 break
             end
         end
     else
         target_space = space
     end
-    target_space = tonumber(target_space)
+    --target_space = tonumber(target_space)
 
     if mod.spaces_fixed_after_macOS14_5 then
         hs.spaces.moveWindowToSpace(window, target_space)
@@ -505,12 +499,9 @@ function mod.setWindowState(window,window_state,space_map)
         window:moveToScreen(target_screen)
         window:focus()
     end
-    --print("window id "..tostring(window:id()))
-    --print("target space "..tostring(target_space))
 
     mod.setFrameState(window, frame_state, fullscreen_state)
-    --mod.issueVerbose("set window " .. window_id, mod.verbose)
-    print("SETWINDOWSTATE END: window: " .. type(window))
+    mod.issueVerbose("set window " .. window:id(), mod.verbose)
 end
 
 function mod.getFrameState(window)

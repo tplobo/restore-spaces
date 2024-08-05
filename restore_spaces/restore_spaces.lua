@@ -14,6 +14,7 @@ local mod = require 'hs.restore_spaces._restore_spaces'
 mod.verbose = false
 mod.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 mod.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
+mod.multitab_pause = 0.01 -- in seconds (=0 breaks tab lists comparison)
 mod.multitab_comparison = {
     critical_tab_count = 10,            -- decides which threshold to use
     small_similarity_threshold = 0.8,   -- small number of tabs
@@ -152,12 +153,9 @@ function mod.compare_tabs(window_tabs,stored_tabs)
     if (stored_tabs == nil) or next(stored_tabs) == nil then
         return false
     end
-    --print("window tabs: " .. hs.inspect(window_tabs))
-    --print("stored tabs: " .. hs.inspect(stored_tabs))
 
    local  all_matches = {}
     for _, tab_title in pairs(window_tabs) do
-        print("tab_title "..tab_title)
         if mod.contains(stored_tabs,tab_title) then
             table.insert(all_matches, true)
         end
@@ -172,11 +170,6 @@ function mod.compare_tabs(window_tabs,stored_tabs)
         tab_limit = mod.multitab_comparison["large_similarity_threshold"]
     end
 
-    --print("all matches: "..hs.inspect(all_matches))
-    --print("window ratio: "..window_ratio)
-    --print("stored ratio: "..stored_ratio)
-    --print("tab limit: "..tab_limit)
-
     local window_check = window_ratio >= tab_limit
     if mod.isNaN(window_ratio) then
         window_check = false
@@ -186,7 +179,6 @@ function mod.compare_tabs(window_tabs,stored_tabs)
         stored_check = false
     end
     local match = window_check and stored_check
-    print(match)
     return match
 end
 
@@ -205,7 +197,6 @@ function mod._applyEnvironmentState()
         error("State for environment has never been saved!")
     end
     local env_state = mod.data_wins[env_name]
-    --print(hs.inspect(env_state))
 
     local all_screens = mod.retrieveEnvironmentEntities("screens",nil)
     for screen_i, screen in ipairs(all_screens) do
@@ -231,23 +222,18 @@ function mod._applyEnvironmentState()
             for _, window in ipairs(space_windows) do
                 local window_state, window_id = mod.getWindowState(window)
                 space_state[window_id] = window_state
-                print("START PROCESSING OF ID: "..window_id)
 
                 if window_state["title"] == "" then
                     local msg = "ignored (no title): "
                     msg = msg .. "\tapp (" .. window_state["app"] .. ")"
                     msg =  msg .. "\twindow id (" .. window_id .. ")"
-                    --print(msg)
                     mod.issueVerbose(msg,mod.verbose)
                 else
                     if env_state[window_id] then
-                        print("state for ID "..window_id.." is stored!")
                         window_state = env_state[window_id]
                         mod.issueVerbose(hs.inspect(window_state),mod.verbose)
-                        print("space "..space)
                         mod.setWindowState(window, window_state, space_map)
                     else
-                        print("STATE: "..hs.inspect(window_state))
                         if window_state["multitab"] == true then
                             local app = window_state["app"]
                             local id_list = multitab_windows[app]
@@ -268,7 +254,6 @@ function mod._applyEnvironmentState()
                                 local msg = "Unknown state for non-multitab app "
                                 msg = msg.."window ID ("..window_id..") and "
                                 msg = msg.."title ("..window_title..")"
-                                print(msg)
                             end
                         end
                     end
@@ -285,7 +270,8 @@ function mod._applyEnvironmentState()
                                 local window_matched = false
                                 for stored_id, stored_state in pairs(env_state) do
                                     local stored_tabs = stored_state["tabs"]
-                                    print("stored tabs: "..hs.inspect(stored_tabs))
+                                    mod.delayExecution(mod.multitab_pause)
+                                    --print("stored_tabs:"..hs.inspect(stored_tabs))
                                     if mod.compare_tabs(window_tabs,stored_tabs) then
                                         mod.rename_key(env_state,stored_id,window_id)
                                         mod.setWindowState(window, stored_state, space_map)
@@ -294,7 +280,8 @@ function mod._applyEnvironmentState()
                                     end
                                 end
                                 if not window_matched then
-                                    print("No state found for window: "..window_id)
+                                    local msg = "No state found for window: "..window_id
+                                    mod.issueVerbose(msg,mod.verbose)
                                 end
                             end
                         end
