@@ -188,6 +188,8 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    (regardless of the order). Two fractions are defined, for comparing "short"
    and "long" tab lists, with the number of tabs that switches between them
    defined in `critical_tab_count`.
+   Unfortunately, the process of cycling through all tabs also loads them,
+   which might be undesireable. No workaround has been found yet.
 
 1. The function `spaces.moveWindowtoSpace` function [stopped working in MacOS
    14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
