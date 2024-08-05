@@ -28,11 +28,11 @@ rs.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 rs.multitab_pause = 0.01 -- in seconds (=0 breaks tab lists comparison)
 rs.multitab_comparison = {
     critical_tab_count = 10,            -- decides which threshold to use
-    small_similarity_threshold = 0.8,   -- small number of tabs
-    large_similarity_threshold = 0.6    -- large number of tabs
+    small_similarity_threshold = 0.8,   -- 80%, for a small number of tabs
+    large_similarity_threshold = 0.6    -- 60%, for a large number of tabs
 }
-rs.config_path = "scp/scp_config"
 rs.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
+rs.config_path = "scp/scp_config"
 rs.spaces_fixed_after_macOS14_5 = true
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 

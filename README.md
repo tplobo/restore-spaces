@@ -15,22 +15,20 @@ spaces on MacOS.
 1. If you do not have [**Homebrew**](https://brew.sh) yet, install it and
    install [Hammerspoon](https://www.hammerspoon.org) for Mac automation:
 
-```
-brew install --cask hammerspoon
-```
+   ```
+   brew install --cask hammerspoon
+   ```
 
-2. Install the [spaces module](https://github.com/asmagill/hs._asm.spaces)
-   for Hammerspoon:
+   already including the [spaces module](https://github.com/asmagill/hs._asm.spaces)
+   in its latest version.
 
-- Download `spaces-v0.x-universal.tar.gz`
-- Extract it in your `.hammerspoon` folder:
+   > ⚠️ **Note:** As of macOS 14.5, some `spaces` functions [do not work correctly](https://github.com/Hammerspoon/hammerspoon/pull/3638). As a temporary solution, the Hammerspoon
+   > [build by user `gartnera`](https://github.com/gartnera/hammerspoon/releases/tag/0.10.0)
+   > can be used instead ((_vide_ **Known Issues**)).
 
-```
-cd ~/.hammerspoon
-tar -xzf ~/Downloads/spaces-v0.x.tar.gz
-```
+<br>
 
-3. Run `install.sh` to copy the `init.lua` file and the `restore_spaces` folder
+2. Run `install.sh` to copy the `init.lua` file and the `restore_spaces` folder
    and into your `.hammerspoon` directory:
 
    ```
@@ -41,27 +39,33 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    in your own `.hammerspoon/init.lua` file to avoid conflicts with other
    modules.
 
-4. Set your preferred configurations and hotkey combinations, for example:
+<br>
 
-```
-local hs = {}
-hs.hotkey = require "hs.hotkey"
-hs.restore_spaces = require 'hs.restore.spaces.restore_spaces'
+3. Set your preferred configurations and hotkey combinations, for example:
 
--- Configure 'restore_spaces'
-hs.restore_spaces.verbose = false
-hs.restore_spaces.space_pause = 0.3
-hs.restore_spaces.screen_pause = 0.4
+   ```
+   local hs = {}
+   hs.hotkey = require "hs.hotkey"
+   hs.restore_spaces = require 'hs.restore.spaces.restore_spaces'
 
--- Bind hotkeys for 'restore_spaces'
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveState)
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
-```
+   -- Configure 'restore_spaces'
+   hs.restore_spaces.verbose = false
+   hs.restore_spaces.space_pause = 0.3
+   hs.restore_spaces.screen_pause = 0.4
 
-5. Open the Hammerspoon app, enable it in Accessibility, restart it and select
+   -- Bind hotkeys for 'restore_spaces'
+   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveState)
+   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
+   ```
+
+<br>
+
+4. Open the Hammerspoon app, enable it in Accessibility, restart it and select
    `Reload Config`.
 
-6. Run the commands a few times to check whether the `space_pause` and
+<br>
+
+5. Run the commands a few times to check whether the `space_pause` and
    `screen_pause` settings comply with your mac. They might need to be
    increased if the console prints:
    ```
@@ -95,13 +99,16 @@ Following features have already been implemented:
 - Check functionalities if/when space IDs change with space deletion/creation.
 - Add a workaround to deal with the phantom dashboard space (_vide_ **Known
   Issues**).
+- Fix restore for windows that have empty title.
+- Fix restore for a list of spaces that has their order changed, by using a
+  `space_map` variable to store the order of space IDs.
+- Fix restore for windows that changed their ID after app restart (_vide_
+  **Known Issues**).
 
 Current features under development; any help is appreciated:
 
 - Add a `notifyUser` call if `gotoSpace` fails due too short pause setting.
-- Fix restore for windows that have empty title.
-- Fix restore for windows that changed their ID after app restart (_vide_
-  **Known Issues**).
+- Add better logging to produce debugging reports.
 - Fix restore for two windows in Fullscreen, Tile left and Tile right, which
   current does not work (afaik, cannot be implemented).
 - Ensure save/apply do not consider hidden windows.
@@ -115,12 +122,23 @@ Current features under development; any help is appreciated:
 - Add tests with mocking, due to the dependence on mac features.
 - ...
 
+To use a development version of the `spaces` module, install it from its
+[repo](https://github.com/asmagill/hs._asm.spaces) package:
+
+- Download `spaces-v0.x-universal.tar.gz`
+- Extract it in your `.hammerspoon` folder:
+
+```
+cd ~/.hammerspoon
+tar -xzf ~/Downloads/spaces-v0.x.tar.gz
+```
+
 ## Known issues
 
-1. The "Dashboard" feature may create a hidden space that cannot be accessed,
-   and thus breaks the `hs.spaces.gotoSpace()` method, even in MacOS versions
-   that do not feature Dashboard anymore. This can be see in the spaces plist
-   file, for example:
+1. The **"Dashboard"** feature may create a hidden space that cannot be
+   accessed, and thus breaks the `hs.spaces.gotoSpace()` method, even in MacOS
+   versions that do not feature Dashboard anymore. This can be see in the
+   spaces plist file, for example:
 
    ```
    defaults read com.apple.spaces.plist
@@ -145,16 +163,31 @@ Current features under development; any help is appreciated:
    killall Dock
    ```
 
-   Instead, the `plist` file is read and used to validate the list of spaces
+   Instead, that `plist` file is read and used to validate the list of spaces
    used to save the environment state.
 
-1. There are no official APIs for putting two windows in split-view fullscreen
-   mode, so the current approach is to place all windows that had a fullscreen
+1. There are no official APIs for putting two windows in **split-view**
+   fullscreen mode, so the current approach is to place all windows that had a fullscreen
    state (split-view or not) into single fullscreen. Split-view has to be set
    manually by the user (with the mouse) after calling `applyEnvironmentState`.
 
-1. Window IDs change when you close/open an app. The current implementation
-   needs to be changed to take into account this.
+1. **Window IDs change when you close/open an app.** The current implementation is
+   able to restore a window to a desired space during `apply` if that window
+   title is the same as it was during the `save` call. If the title changes for
+   any reason, that window will not be recognized.
+   In the particular case of apps in which windows can have multiple tabs, the
+   title tends to coincide with the title of the tab currently selected. This
+   is taken into account by the module with the `multitab_apps` settings, which
+   specifies for which apps the `save` and `apply` functions may cycle through
+   all tabs of each window to gather a list of titles. This is done using a
+   custom function developed in `applescript`. Windows are then restored during
+   `apply` by determiing whether they have a counterpart in the saved states,
+   by comparing the current list of tabs with the saved one. Thresholds for
+   what is considered a "counterpart" are defined by the `multitab_comparison`
+   setting, by establishing a fraction of the list of tabs that must coincide
+   (regardless of the order). Two fractions are defined, for comparing "short"
+   and "long" tab lists, with the number of tabs that switches between them
+   defined in `critical_tab_count`.
 
 1. The function `spaces.moveWindowtoSpace` function [stopped working in MacOS
    14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
@@ -164,5 +197,5 @@ Current features under development; any help is appreciated:
    which slightly increases the delay time of processing each Space. To avoid
    this increase in unnecessary cases, a switch for this is implemented as the
    `spaces_fixed_after_macOS14_5` global variable. It might become obsolete
-   after the `spaces` extension is updated in Hammerspoon to work with Sonoma
-   14.5.
+   after the `spaces` extension is updated to work with **Sonoma 14.5** in the
+   Hammerspoon repo itself.
