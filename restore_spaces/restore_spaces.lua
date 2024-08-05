@@ -55,6 +55,4 @@ require('hs.restore_spaces.rs.plumbing')(rs, hs)
 -- Import porcelain (public) functions
 require('hs.restore_spaces.rs.porcelain')(rs, hs)
 
-print(hs.inspect(rs))
-
 return rs
