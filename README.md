@@ -22,9 +22,8 @@ spaces on MacOS.
    already including the [spaces module](https://github.com/asmagill/hs._asm.spaces)
    in its latest version.
 
-   > ⚠️ **Note:** As of macOS 14.5, some `spaces` functions [do not work correctly](https://github.com/Hammerspoon/hammerspoon/pull/3638). As a temporary solution, the Hammerspoon
-   > [build by user `gartnera`](https://github.com/gartnera/hammerspoon/releases/tag/0.10.0)
-   > can be used instead ((_vide_ **Known Issues**)).
+   > ⚠️ **Note:** As of macOS 14.5, some `spaces` functions [do not work correctly](https://github.com/Hammerspoon/hammerspoon/pull/3638) on Hammerspoon 0.9.100 and below. As a temporary solution, the Hammerspoon [build by user `gartnera`](https://github.com/gartnera/hammerspoon/releases/tag/0.10.0) can be used instead. For Hammerspoon 1.0.0
+   > and above, this has been fixed (_vide_ **Known Issues**).
 
 <br>
 
