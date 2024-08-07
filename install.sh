@@ -6,28 +6,33 @@ MODULE_FILES=(
 )
 
 DESTINATIONS=(
-    "~/.hammerspoon"
-    "~/.hammerspoon/hs"
+    "$HOME/.hammerspoon"
+    "$HOME/.hammerspoon/hs"
 )
 
 function install_restore_spaces() {
-    local -n ALL_FILES=$1
-    local -n ALL_DESTINATIONS=$2
+    local ALL_FILES=("${(@P)1}")
+    local ALL_DESTINATIONS=("${(@P)2}")
+    #echo "$ALL_FILES"
+    #echo "$ALL_DESTINATIONS"
 
-    for (( i=0; i<${#ALL_FILES[@]}; i++ )); do
+    echo "Installing 'restore_spaces' module..."
+    for (( i=1; i<=${#ALL_FILES[@]}; i++ )); do
         DESTINATION=${ALL_DESTINATIONS[$i]}
         FILE=${ALL_FILES[$i]}
-
+        
+        echo "Copying $FILE to $DESTINATION"
         if [[ ! -d $DESTINATION ]]; then
             mkdir -p $DESTINATION
         fi
 
-        if [[ -f $FILE ]]; then
-            cp "$FILE" "$DESTINATION"
+        if [[ -e $FILE ]]; then
+            cp -r "$FILE" "$DESTINATION"
         else
             echo "File not found: $FILE"
         fi
     done
+    echo "Installed 'restore_spaces' module."
 }
 
 install_restore_spaces MODULE_FILES DESTINATIONS
