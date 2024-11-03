@@ -210,6 +210,8 @@ return function(rs,hs)
                 window:moveToScreen(target_screen)
                 window:focus()
             end
+        else
+            --mod.issueVerbose("message with the window ID...", mod.verbose)
         end
 
         rs.setFrameState(window, frame_state, fullscreen_state)
