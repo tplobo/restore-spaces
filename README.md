@@ -53,8 +53,8 @@ spaces on MacOS.
    hs.restore_spaces.screen_pause = 0.4
 
    -- Bind hotkeys for 'restore_spaces'
-   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveState)
-   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyState)
+   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", hs.restore_spaces.saveEnvironmentState)
+   hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", hs.restore_spaces.applyEnvironmentState)
    ```
 
 <br>
