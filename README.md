@@ -71,11 +71,20 @@ spaces on MacOS.
 5. Run the commands a few times to check whether the `space_pause` and
    `screen_pause` settings comply with your mac. They might need to be
    increased if the console prints:
+
    ```
    ... attempt to index a nil value (local 'child')
     stack traceback:
    ...: in function 'hs.spaces.gotoSpace' ...
    ```
+
+6. Run the commands a few times with multi-tab apps open to check whether the
+   settings of the function defined in `getVisibleTabs.applescript` comply with
+   your mac. In particular, the `tabDelay` setting in `scp/scp_config.json`
+   might need to be increased if cycling through tabs seems to be stopping
+   before all tabs are cycled through. This is can be true if, _e.g._ loading
+   unloaded tabs takes longer than the value in `tabDelay`. For more
+   information, _vide_ item **Window IDs change...** in **Known Issues**.
 
 ## Usage
 
@@ -106,7 +115,7 @@ Following features have already been implemented:
 - Fix restore for a list of spaces that has their order changed, by using a
   `space_map` variable to store the order of space IDs.
 - Fix restore for windows that changed their ID after app restart (_vide_
-  **Known Issues**).
+  item **Window IDs change...** in **Known Issues**).
 
 Current features under development; any help is appreciated:
 
@@ -175,28 +184,6 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    to be set manually by the user (with the mouse) after calling
    `applyEnvironmentState`.
 
-1. **Window IDs change when you close/open an app.** The current implementation
-   is able to restore a window to a desired space during `apply` if that window
-   title is the same as it was during the `save` call. If the title changes for
-   any reason, that window will not be recognized.
-
-   In the particular case of apps in which windows can have multiple tabs, the
-   title tends to coincide with the title of the tab currently selected. This
-   is taken into account by the module with the `multitab_apps` settings, which
-   specifies for which apps the `save` and `apply` functions may cycle through
-   all tabs of each window to gather a list of titles. This is done using a
-   custom function developed in `applescript`. Windows are then restored during
-   `apply` by determiing whether they have a counterpart in the saved states,
-   by comparing the current list of tabs with the saved one. Thresholds for
-   what is considered a "counterpart" are defined by the `multitab_comparison`
-   setting, by establishing a fraction of the list of tabs that must coincide
-   (regardless of the order). Two fractions are defined, for comparing "short"
-   and "long" tab lists, with the number of tabs that switches between them
-   defined in `critical_tab_count`.
-
-   Unfortunately, the process of cycling through all tabs also loads them,
-   which might be undesireable. No workaround has been found yet.
-
 1. The function `spaces.moveWindowtoSpace` function [stopped working in MacOS
    14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
    solution is to use the Hammerspoon app build by the `gartnera` user in
@@ -209,9 +196,34 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    was updated to work with **Sonoma 14.5** in the Hammerspoon repo itself, and
    will be removed in a future release.
 
-1. The function defined in `getVisibleTabs.applescript` needs to be modified
-   to work with multiple monitors. It currently behaves poorly when more than
-   one visible Desktop (Space in focus) contains windows of apps defined as
-   "multitab" apps; the **applescript cycles visible tabs in all monitors**,
-   which means tab lists are incorrect. Suggestions on how to possibly
-   circumvent this issue are appreciated.
+1. **Window IDs change when you close/open an app.** The current implementation
+   is able to restore a window to a desired space during `apply` if that window
+   title is the same as it was during the `save` call. If the title changes for
+   any reason, that window will not be recognized.
+
+   In the particular case of apps in which windows can have multiple tabs, the
+   title tends to coincide with the title of the tab currently selected. This
+   is taken into account by the module with the `multitab_apps` settings, which
+   specifies for which apps the `save` and `apply` functions may cycle through
+   all tabs of each window to gather a list of titles. This is done using a
+   custom function developed in `applescript`. Windows are then restored during
+   `apply` by determining whether they have a counterpart in the saved states,
+   by comparing the current list of tabs with the saved one. Thresholds for
+   what is considered a "counterpart" are defined by the `multitab_comparison`
+   setting, by establishing a fraction of the list of tabs that must coincide
+   (regardless of the order). Two fractions are defined, for comparing "short"
+   and "long" tab lists, with the number of tabs that switches between them
+   defined in `critical_tab_count`.
+
+   Unfortunately, the process of cycling through all tabs also loads them,
+   which might be undesireable. No workaround has been found yet.
+
+1. The function defined in `getVisibleTabs.applescript` used to cycle through
+   visible tabs in "multitab apps" needs to be modified to work with multiple
+   monitors. It currently behaves poorly when more than one visible Desktop
+   (_i.e._ a Space in focus) contains windows of apps defined as "multitab"
+   apps; the **applescript cycles through visible tabs in all monitors**, in a
+   similar way to how it cycles through visible tabs of multiple windows in a
+   single Desktop. This means the generated tab lists do not distinguish
+   between different displays. Suggestions on how to possibly circumvent this
+   issue are appreciated.
