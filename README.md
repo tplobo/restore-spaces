@@ -22,8 +22,12 @@ spaces on MacOS.
    already including the [spaces module](https://github.com/asmagill/hs._asm.spaces)
    in its latest version.
 
-   > ⚠️ **Note:** As of macOS 14.5, some `spaces` functions [do not work correctly](https://github.com/Hammerspoon/hammerspoon/pull/3638) on Hammerspoon 0.9.100 and below. As a temporary solution, the Hammerspoon [build by user `gartnera`](https://github.com/gartnera/hammerspoon/releases/tag/0.10.0) can be used instead. For Hammerspoon 1.0.0
-   > and above, this has been fixed (_vide_ **Known Issues**).
+   > ⚠️ **Note:** As of macOS 14.5, some `spaces` functions
+   > [do not work correctly](https://github.com/Hammerspoon/hammerspoon/pull/3638)
+   > on Hammerspoon 0.9.100 and below. As a temporary solution, the Hammerspoon
+   > [build by user `gartnera`](https://github.com/gartnera/hammerspoon/releases/tag/0.10.0)
+   > can be used instead. For Hammerspoon 1.0.0 and above, this has been fixed
+   > (_vide_ item **Sonoma 14.5** in **Known Issues**).
 
 <br>
 
@@ -166,14 +170,16 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    used to save the environment state.
 
 1. There are no official APIs for putting two windows in **split-view**
-   fullscreen mode, so the current approach is to place all windows that had a fullscreen
-   state (split-view or not) into single fullscreen. Split-view has to be set
-   manually by the user (with the mouse) after calling `applyEnvironmentState`.
+   fullscreen mode, so the current approach is to place all windows that had a
+   fullscreen state (split-view or not) into single fullscreen. Split-view has
+   to be set manually by the user (with the mouse) after calling
+   `applyEnvironmentState`.
 
-1. **Window IDs change when you close/open an app.** The current implementation is
-   able to restore a window to a desired space during `apply` if that window
+1. **Window IDs change when you close/open an app.** The current implementation
+   is able to restore a window to a desired space during `apply` if that window
    title is the same as it was during the `save` call. If the title changes for
    any reason, that window will not be recognized.
+
    In the particular case of apps in which windows can have multiple tabs, the
    title tends to coincide with the title of the tab currently selected. This
    is taken into account by the module with the `multitab_apps` settings, which
@@ -187,6 +193,7 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    (regardless of the order). Two fractions are defined, for comparing "short"
    and "long" tab lists, with the number of tabs that switches between them
    defined in `critical_tab_count`.
+
    Unfortunately, the process of cycling through all tabs also loads them,
    which might be undesireable. No workaround has been found yet.
 
@@ -194,9 +201,17 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
    solution is to use the Hammerspoon app build by the `gartnera` user in
    Github. This solution does not work when spaces are distributed across
-   multiple screens/monitors, so a [follow-up solution](https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567) was proposed by `cunha`,
-   which slightly increases the delay time of processing each Space. To avoid
-   this increase in unnecessary cases, a switch for this is implemented as the
-   `spaces_fixed_after_macOS14_5` global variable. It might become obsolete
-   after the `spaces` extension is updated to work with **Sonoma 14.5** in the
-   Hammerspoon repo itself.
+   multiple screens/monitors, so a [follow-up solution](https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
+   was proposed by `cunha`, which slightly increases the delay time of
+   processing each Space. To avoid this increase in unnecessary cases, a switch
+   for this is implemented as the `spaces_fixed_after_macOS14_5` global
+   variable. This switch has become obsolete after the `spaces` extension
+   was updated to work with **Sonoma 14.5** in the Hammerspoon repo itself, and
+   will be removed in a future release.
+
+1. The function defined in `getVisibleTabs.applescript` needs to be modified
+   to work with multiple monitors. It currently behaves poorly when more than
+   one visible Desktop (Space in focus) contains windows of apps defined as
+   "multitab" apps; the **applescript cycles visible tabs in all monitors**,
+   which means tab lists are incorrect. Suggestions on how to possibly
+   circumvent this issue are appreciated.
