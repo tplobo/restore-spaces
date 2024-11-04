@@ -211,7 +211,7 @@ return function(rs,hs)
                 window:focus()
             end
         else
-            --mod.issueVerbose("message with the window ID...", mod.verbose)
+            rs.issueVerbose("target space undefined; unable to set window " .. window:id(), rs.verbose)
         end
 
         rs.setFrameState(window, frame_state, fullscreen_state)
