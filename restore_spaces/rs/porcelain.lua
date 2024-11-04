@@ -106,7 +106,7 @@ return function(rs,hs)
 
         rs.data_wins = rs.processDataInFile("read","windows")
         if not rs.data_wins[env_name] then
-            error("State for environment has never been saved!")
+            error("State for environment [" .. env_name .. "] has never been saved!")
         end
         local env_state = rs.data_wins[env_name]
 

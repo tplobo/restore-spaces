@@ -195,19 +195,23 @@ return function(rs,hs)
         else
             target_space = space
         end
-        --target_space = tonumber(target_space)
+        if target_space then
+            --target_space = tonumber(target_space)
 
-        if rs.spaces_fixed_after_macOS14_5 then
-            hs.spaces.moveWindowToSpace(window, target_space)
+            if rs.spaces_fixed_after_macOS14_5 then
+                hs.spaces.moveWindowToSpace(window, target_space)
+            else
+                -- solution by `cunha`
+                -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
+                local target_screen, _ = hs.spaces.spaceDisplay(target_space)
+                hs.spaces.moveWindowToSpace(window, target_space)
+                window:focus()
+                rs.delayExecution(0.4)
+                window:moveToScreen(target_screen)
+                window:focus()
+            end
         else
-            -- solution by `cunha`
-            -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
-            local target_screen, _ = hs.spaces.spaceDisplay(target_space)
-            hs.spaces.moveWindowToSpace(window, target_space)
-            window:focus()
-            rs.delayExecution(0.4)
-            window:moveToScreen(target_screen)
-            window:focus()
+            rs.issueVerbose("target space undefined; unable to set window " .. window:id(), rs.verbose)
         end
 
         rs.setFrameState(window, frame_state, fullscreen_state)
