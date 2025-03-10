@@ -183,6 +183,10 @@ return function(rs,hs)
         --local screen = window_state["screen"]
         local space = window_state["space"]
         local target_space = nil
+
+        --TODO: change argument to `all_space_maps` to loop through each 
+        -- space_map of each screen, and find `target_space` when it is
+        -- in a screen different than the one the window currently is.
         if space_map then
             for _, pair in pairs(space_map) do
                 local old_space = pair[1]

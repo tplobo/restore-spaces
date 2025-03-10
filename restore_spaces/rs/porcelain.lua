@@ -111,6 +111,12 @@ return function(rs,hs)
         local env_state = rs.data_wins[env_name]
 
         local all_screens = rs.retrieveEnvironmentEntities("screens",nil)
+
+        -- TODO: Build all_space_maps by looping thorugh all screens, and
+        -- change the input of rs.setWindowState to all_space_maps instead
+        -- of space_map. This will ensure windows can get relocated to
+        -- different spaces on different screens.
+
         for screen_i, screen in ipairs(all_screens) do
             local screen_id = tostring(screen:id())
             local screen_index = rs.paddedToStr(screen_i)
