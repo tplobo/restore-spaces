@@ -164,7 +164,7 @@ return function(rs,hs)
             window_state["tabs"] = nil
         end
 
-        --mod.issueVerbose("get window " .. window_id, mod.verbose)
+        rs.issueVerbose("get window " .. window:id(), rs.verbose)
         return window_state, window_id
     end
 
@@ -201,9 +201,9 @@ return function(rs,hs)
                         target_space = new_space
                         target_screen = screen_index
                         msg = "target space " .. tostring(target_space)
-                        msg = msg .. " identified "
-                        msg = msg .. "in screen " .. tostring(target_screen)
-                        msg = msg .. "for window " .. window:id()
+                        msg = msg .. " identified"
+                        msg = msg .. " in screen " .. tostring(target_screen)
+                        msg = msg .. " for window " .. window:id()
                         rs.issueVerbose(msg, rs.verbose)
                         break
                     end
@@ -217,15 +217,19 @@ return function(rs,hs)
             rs.issueVerbose(msg, rs.verbose)
         end
         --print("TARGET SPACE: " .. tostring(target_space))
+        --print("TARGET SPACE TYPE: " .. type(target_space))
 
+        local status, err_msg
         if rs.spaces_fixed_after_macOS14_5 then
             --TODO: deprecate this block
-            hs.spaces.moveWindowToSpace(window, target_space)
+            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
+            --print("WINDOW: " .. window:id())
+            --print("TARGET SPACE: " .. tostring(target_space))
         else
             -- solution by `cunha`
             -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
             local target_screen, _ = hs.spaces.spaceDisplay(target_space)
-            hs.spaces.moveWindowToSpace(window, target_space)
+            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
             window:focus()
             rs.delayExecution(0.4)
             window:moveToScreen(target_screen)
@@ -233,7 +237,14 @@ return function(rs,hs)
         end
 
         rs.setFrameState(window, frame_state, fullscreen_state)
-        rs.issueVerbose("set window " .. window:id(), rs.verbose)
+        if status then
+            rs.issueVerbose("set window " .. window:id(), rs.verbose)
+        else
+            rs.issueVerbose("failed to set window " .. window:id(), rs.verbose)
+            msg = "moveWindowToSpace status (" .. tostring(status)
+            msg = msg .. "): " .. err_msg
+            rs.issueVerbose(msg, rs.verbose)
+        end
     end
 
     rs.getFrameState = function(window)

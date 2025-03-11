@@ -136,10 +136,9 @@ return function(rs,hs)
 
             rs.delayExecution(rs.screen_pause)
             for _, space in pairs(screen_spaces) do
-                rs.issueVerbose(
-                    "go to space: " .. space .. " on screen: " .. screen_id,
-                    rs.verbose
-                )
+                local msg = "go to space: " .. space
+                msg = msg .. " on screen: " .. screen_id
+                rs.issueVerbose(msg,rs.verbose)
                 hs.spaces.gotoSpace(space)
                 rs.delayExecution(rs.space_pause)
                 
@@ -157,10 +156,13 @@ return function(rs,hs)
                         rs.issueVerbose(msg,rs.verbose)
                     else
                         if env_state[window_id] then
-                            window_state = env_state[window_id]
-                            rs.issueVerbose(hs.inspect(window_state),rs.verbose)
-                            --rs.setWindowState(window, window_state, space_map)
-                            rs.setWindowState(window, window_state, all_maps)
+                            local loaded_state = env_state[window_id]
+                            local msg = "LOADED WINDOW STATE: "
+                            msg = msg .. hs.inspect(loaded_state)
+                            rs.issueVerbose(msg,rs.verbose)
+                            rs.issueVerbose("WINDOW STATE: " .. hs.inspect(window_state),rs.verbose)
+                            --rs.setWindowState(window, loaded_state, space_map)
+                            rs.setWindowState(window, loaded_state, all_maps)
                         else
                             if window_state["multitab"] == true then
                                 local app = window_state["app"]
@@ -183,6 +185,7 @@ return function(rs,hs)
                                     local msg = "Unknown state for non-multitab app "
                                     msg = msg.."window ID ("..window_id..") and "
                                     msg = msg.."title ("..window_title..")"
+                                    rs.issueVerbose(msg,rs.verbose)
                                 end
                             end
                         end
