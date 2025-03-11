@@ -117,10 +117,19 @@ return function(rs,hs)
         -- of space_map. This will ensure windows can get relocated to
         -- different spaces on different screens.
 
+        -- Build all_maps with all space maps to ensure windows can be
+        -- relocated to spaces on different screens.
+        local all_maps = {}
+        for screen_i, _ in ipairs(all_screens) do
+            local screen_index = rs.paddedToStr(screen_i)
+            all_maps[screen_index] = env[screen_index]["space_map"]
+        end
+        --print("all_maps: " .. hs.inspect(all_maps))
+
         for screen_i, screen in ipairs(all_screens) do
             local screen_id = tostring(screen:id())
             local screen_index = rs.paddedToStr(screen_i)
-            local space_map = env[screen_index]["space_map"]
+            --local space_map = env[screen_index]["space_map"]
 
             local initial_space = hs.spaces.activeSpaceOnScreen(screen)
             local screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
@@ -150,7 +159,8 @@ return function(rs,hs)
                         if env_state[window_id] then
                             window_state = env_state[window_id]
                             rs.issueVerbose(hs.inspect(window_state),rs.verbose)
-                            rs.setWindowState(window, window_state, space_map)
+                            --rs.setWindowState(window, window_state, space_map)
+                            rs.setWindowState(window, window_state, all_maps)
                         else
                             if window_state["multitab"] == true then
                                 local app = window_state["app"]
@@ -165,7 +175,8 @@ return function(rs,hs)
                                     if window_title == stored_title then
                                         found_state = true
                                         rs.rename_key(env_state,stored_id,window_id)
-                                        rs.setWindowState(window, stored_state, space_map)
+                                        --rs.setWindowState(window, window_state, space_map)
+                                        rs.setWindowState(window, window_state, all_maps)
                                     end
                                 end
                                 if not found_state then
@@ -191,7 +202,8 @@ return function(rs,hs)
                                         rs.delayExecution(rs.multitab_pause)
                                         if rs.compareTabs(window_tabs,stored_tabs) then
                                             rs.rename_key(env_state,stored_id,window_id)
-                                            rs.setWindowState(window, stored_state, space_map)
+                                            --rs.setWindowState(window, window_state, space_map)
+                                            rs.setWindowState(window, window_state, all_maps)
                                             window_matched = true
                                             break
                                         end

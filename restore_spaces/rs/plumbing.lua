@@ -168,7 +168,9 @@ return function(rs,hs)
         return window_state, window_id
     end
 
-    rs.setWindowState = function(window,window_state,space_map)
+    
+    --rs.setWindowState = function(window,window_state,space_map)
+    rs.setWindowState = function(window,window_state,all_maps)
         if not window_state then
             --TODO: use window title to identify window (this creastes a
             --      problem if the window has multiple tabs)
@@ -180,28 +182,44 @@ return function(rs,hs)
         --local app = window_state["app"]
         local frame_state = window_state["frame"]
         local fullscreen_state = window_state["fullscreen"]
-        --local screen = window_state["screen"]
+        local screen = window_state["screen"]
         local space = window_state["space"]
-        local target_space = nil
-
-        --TODO: change argument to `all_space_maps` to loop through each 
+        local target_screen = screen
+        local target_space = space
+        
+        --TODO: change argument to `all_maps` to loop through each 
         -- space_map of each screen, and find `target_space` when it is
         -- in a screen different than the one the window currently is.
-        if space_map then
-            for _, pair in pairs(space_map) do
-                local old_space = pair[1]
-                local new_space = pair[2]
-                if old_space == space then
-                    target_space = new_space
-                    break
+        --if space_map then
+        local msg
+        if all_maps then
+            for screen_index, space_map in pairs(all_maps) do
+                for _, pair in pairs(space_map) do
+                    local old_space = pair[1]
+                    local new_space = pair[2]
+                    if old_space == space then
+                        target_space = new_space
+                        target_screen = screen_index
+                        msg = "target space " .. tostring(target_space)
+                        msg = msg .. " identified "
+                        msg = msg .. "in screen " .. tostring(target_screen)
+                        msg = msg .. "for window " .. window:id()
+                        rs.issueVerbose(msg, rs.verbose)
+                        break
+                    end
                 end
             end
+            
         else
-            target_space = space
+            msg = "screen and space kept unchanged since "
+            msg = msg .. "target space was not identified "
+            msg = msg .. "for window " .. window:id()
+            rs.issueVerbose(msg, rs.verbose)
         end
-        --target_space = tonumber(target_space)
+        --print("TARGET SPACE: " .. tostring(target_space))
 
         if rs.spaces_fixed_after_macOS14_5 then
+            --TODO: deprecate this block
             hs.spaces.moveWindowToSpace(window, target_space)
         else
             -- solution by `cunha`
