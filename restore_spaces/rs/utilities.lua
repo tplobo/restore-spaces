@@ -46,6 +46,15 @@ return function(rs,hs)
         return list_var
     end
 
+    rs.validateTable = function(value)
+        if type(value) ~= "table" then
+            local msg = "Converted non-table argument: " .. tostring(value)
+            rs.issueVerbose(msg, rs.verbose)
+            return { value }
+        end
+        return value
+    end
+
     rs.rename_key = function(dict_var,old_key,new_key)
         dict_var[new_key] = dict_var[old_key]
         dict_var[old_key] = nil

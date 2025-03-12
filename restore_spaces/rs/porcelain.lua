@@ -199,6 +199,10 @@ return function(rs,hs)
                                 end
                                 local app_tabs = rs.getAppTabsInSpace(app,id2title)
                                 for window_id, window_tabs in pairs(app_tabs) do
+                                    --TODO: find a way to ignore window_id for
+                                    -- windows not in the current screen (here
+                                    -- or in applescrip)
+
                                     local window_matched = false
                                     for stored_id, stored_state in pairs(env_state) do
                                         local stored_tabs = stored_state["tabs"]
@@ -206,7 +210,7 @@ return function(rs,hs)
                                         if rs.compareTabs(window_tabs,stored_tabs) then
                                             rs.rename_key(env_state,stored_id,window_id)
                                             --rs.setWindowState(window, window_state, space_map)
-                                            rs.setWindowState(window, window_state, all_maps)
+                                            rs.setWindowState(window, stored_state, all_maps)
                                             window_matched = true
                                             break
                                         end

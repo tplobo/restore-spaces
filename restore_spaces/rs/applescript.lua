@@ -121,12 +121,13 @@ return function(rs,hs)
     end
 
     rs.compareTabs = function(window_tabs,stored_tabs)
-        print("WINDOW_TABS: " .. hs.inspect(window_tabs))
-        print("STORED_TABS: " .. hs.inspect(stored_tabs))
-        if type(window_tabs) ~= "table" or next(window_tabs) == nil then
-            return false
-        end
-        if type(stored_tabs) ~= "table" or next(stored_tabs) == nil then
+        -- Force arguments to be tables (check if case for string arguments
+        -- should not automatically return false instead)
+        window_tabs = rs.validateTable(window_tabs)
+        stored_tabs = rs.validateTable(stored_tabs)
+        if next(window_tabs) == nil or next(stored_tabs) == nil then
+            local msg = "Comparison not possible with empty table; returning false"
+            rs.issueVerbose(msg, rs.verbose)
             return false
         end
 

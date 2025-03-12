@@ -219,12 +219,13 @@ return function(rs,hs)
         --print("TARGET SPACE: " .. tostring(target_space))
         --print("TARGET SPACE TYPE: " .. type(target_space))
 
+        --TODO: deprecate this block:
         local status, err_msg
         if rs.spaces_fixed_after_macOS14_5 then
-            --TODO: deprecate this block
-            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
             --print("WINDOW: " .. window:id())
             --print("TARGET SPACE: " .. tostring(target_space))
+            --print("TARGET SPACE TYPE: " .. type(target_space))
+            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
         else
             -- solution by `cunha`
             -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
