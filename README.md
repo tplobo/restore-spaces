@@ -29,6 +29,11 @@ spaces on MacOS.
    > can be used instead. For Hammerspoon 1.0.0 and above, this has been fixed
    > (_vide_ item **Sonoma 14.5** in **Known Issues**).
 
+   > ⚠️ **Note:** As of macOS 15.0, the `moveWindowToSpace` function
+   > [is not working](https://github.com/Hammerspoon/hammerspoon/issues/3698)
+   > on Hammerspoon 1.0.0. No solutions for this have been found yet
+   > (_vide_ item **Sequoia 15.0** in **Known Issues**)
+
 <br>
 
 2. Run `install.sh` to copy the `init.lua` file and the `restore_spaces` folder
@@ -184,17 +189,16 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    to be set manually by the user (with the mouse) after calling
    `applyEnvironmentState`.
 
-1. The function `spaces.moveWindowtoSpace` function [stopped working in MacOS
-   14.5](https://github.com/Hammerspoon/hammerspoon/pull/3638). The current
-   solution is to use the Hammerspoon app build by the `gartnera` user in
-   Github. This solution does not work when spaces are distributed across
-   multiple screens/monitors, so a [follow-up solution](https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
-   was proposed by `cunha`, which slightly increases the delay time of
-   processing each Space. To avoid this increase in unnecessary cases, a switch
-   for this is implemented as the `spaces_fixed_after_macOS14_5` global
-   variable. This switch has become obsolete after the `spaces` extension
-   was updated to work with **Sonoma 14.5** in the Hammerspoon repo itself, and
-   will be removed in a future release.
+1. In **Sonoma 14.5**, the function `spaces.moveWindowtoSpace` function
+   [stopped working](https://github.com/Hammerspoon/hammerspoon/pull/3638).
+   The current solution is to use the Hammerspoon app build by the `gartnera`
+   user in Github. This solution does not work when spaces are distributed across
+   multiple screens/monitors, so a [follow-up solution](https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567) was proposed by `cunha`, which slightly
+   increases the delay time of processing each Space. To avoid this increase
+   in unnecessary cases, a switch for this is implemented as the
+   `spaces_fixed_after_macOS14_5` global variable. This switch has become
+   obsolete after the `spaces` extension was updated to work with macOS 14.5
+   in the Hammerspoon repo itself, and will be removed in a future release.
 
 1. **Window IDs change when you close/open an app.** The current implementation
    is able to restore a window to a desired space during `apply` if that window
@@ -227,3 +231,12 @@ tar -xzf ~/Downloads/spaces-v0.x.tar.gz
    single Desktop. This means the generated tab lists do not distinguish
    between different displays. Suggestions on how to possibly circumvent this
    issue are appreciated.
+
+1. In **Sequoia 15.0**, the function `spaces.moveWindowtoSpace` function
+   [stopped working](https://github.com/Hammerspoon/hammerspoon/issues/3698).
+   Multiple proposals are being attempted but none yet have been integrated
+   into Hammerspoon. The Spoon [devised by user `mogenson`](https://github.com/mogenson/Drag.spoon)
+   seems to be a good option, but it has not yet been tested with
+   `restore-spaces`. If anyone tests it and it seems to work, please let me
+   know so that I can try to incorporate it into the package using a similar
+   solution as with the `spaces_fixed_after_macOS14_5` variable.
