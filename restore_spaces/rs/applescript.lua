@@ -121,11 +121,16 @@ return function(rs,hs)
     end
 
     rs.compareTabs = function(window_tabs,stored_tabs)
-        if (stored_tabs == nil) or next(stored_tabs) == nil then
+        print("WINDOW_TABS: " .. hs.inspect(window_tabs))
+        print("STORED_TABS: " .. hs.inspect(stored_tabs))
+        if type(window_tabs) ~= "table" or next(window_tabs) == nil then
+            return false
+        end
+        if type(stored_tabs) ~= "table" or next(stored_tabs) == nil then
             return false
         end
 
-    local  all_matches = {}
+        local  all_matches = {}
         for _, tab_title in pairs(window_tabs) do
             if rs.contains(stored_tabs,tab_title) then
                 table.insert(all_matches, true)
