@@ -1,3 +1,5 @@
+-- `applescript.lua`
+
 -- Initialize applescript functions
 return function(rs,hs)
 

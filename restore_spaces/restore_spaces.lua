@@ -1,3 +1,5 @@
+-- `restore_spaces.lua`
+
 -- Import Hammerspoon modules
 --hs.chooser = require 'hs.chooser'
 hs.application = require 'hs.application'
