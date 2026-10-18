@@ -3,9 +3,13 @@
 -- Import Hammerspoon modules
 --hs.chooser = require 'hs.chooser'
 hs.application = require 'hs.application'
+hs.axuielement = require 'hs.axuielement'
+hs.eventtap = require 'hs.eventtap'
 hs.fnutils = require 'hs.fnutils'
+hs.host = require 'hs.host'
 hs.inspect = require 'hs.inspect'
 hs.hotkey = require 'hs.hotkey'
+hs.mouse = require 'hs.mouse'
 hs.notify = require 'hs.notify'
 hs.window = require 'hs.window'
 hs.screen = require 'hs.screen'
@@ -35,18 +39,27 @@ rs.multitab_comparison = {
 }
 rs.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
 rs.config_path = "scp/scp_config"
-rs.spaces_fixed_after_macOS14_5 = true
+rs.fallback_space = "first" -- "first" or "last" desktop of the target screen
+rs.mc_timeout = 2.0 -- in seconds, to wait for Mission Control (macOS 15+)
+rs.mc_pause = 0.05 -- in seconds, polling interval for Mission Control
+rs.mc_settle = 0.3 -- in seconds, to let Mission Control animations settle
+rs.mc_drag_steps = 25 -- steps of the synthetic drag (single jumps are ignored)
+rs.mc_drag_pause = 0.01 -- in seconds, between drag steps
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 
 -- Global variables (dynamic)
 rs.data_wins = {} -- collected info for each window
 rs.data_envs = {} -- collected info for each environment
+rs.fallback_count = 0 -- windows sent to a fallback location during `apply`
 
 -- Import utilities
 require('hs.restore_spaces.rs.utilities')(rs, hs)
 
 -- Import environment functions
 require('hs.restore_spaces.rs.environment')(rs, hs)
+
+-- Import space-control functions
+require('hs.restore_spaces.rs.spaces')(rs, hs)
 
 -- Import applescript functions
 require('hs.restore_spaces.rs.applescript')(rs, hs)

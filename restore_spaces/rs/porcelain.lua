@@ -4,12 +4,14 @@
 return function(rs,hs)
 
     rs.saveEnvironmentState = function()
+        rs.logSystemInfo()
         rs.processPlistConfig("create")
         rs.getEnvironmentState()
         rs.processPlistConfig("destroy")
     end
 
     rs.applyEnvironmentState = function()
+        rs.logSystemInfo()
         rs.processPlistConfig("create")
         rs.setEnvironmentState()
         rs.processPlistConfig("destroy")
@@ -41,7 +43,7 @@ return function(rs,hs)
                     "go to space: " .. space .. " on screen: " .. screen_id,
                     rs.verbose
                 )
-                hs.spaces.gotoSpace(space)
+                rs.gotoSpace(space)
                 rs.delayExecution(rs.space_pause)
 
                 local space_state = {}
@@ -89,7 +91,7 @@ return function(rs,hs)
                 end
 
             end
-            hs.spaces.gotoSpace(initial_space)
+            rs.gotoSpace(initial_space)
         end
         rs.data_wins[env_name] = env_state
         rs.data_wins = rs.processDataInFile("write","windows")
@@ -102,6 +104,7 @@ return function(rs,hs)
         if not env_name then
             error("Undefined environment name!")
         end
+        rs.fallback_count = 0
 
         --TODO: open apps if they are not open?
         --TODO: close apps if they are not saved?
@@ -141,7 +144,7 @@ return function(rs,hs)
                 local msg = "go to space: " .. space
                 msg = msg .. " on screen: " .. screen_id
                 rs.issueVerbose(msg,rs.verbose)
-                hs.spaces.gotoSpace(space)
+                rs.gotoSpace(space)
                 rs.delayExecution(rs.space_pause)
                 
                 local space_state = {}
@@ -228,7 +231,10 @@ return function(rs,hs)
                     
                 end
             end
-            hs.spaces.gotoSpace(initial_space)
+            rs.gotoSpace(initial_space)
+        end
+        if rs.fallback_count > 0 then
+            rs.notifyUser("fallback")
         end
         rs.notifyUser("apply")
     end

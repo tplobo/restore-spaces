@@ -18,6 +18,8 @@ return function(rs,hs)
             text = "Windows saved!"
         elseif case == "apply" then
             text = "Windows applied!"
+        elseif case == "fallback" then
+            text = "Some windows were moved to fallback locations!"
         elseif case == "environment" then
             text = "Environment undefined!"
         else
@@ -170,7 +172,6 @@ return function(rs,hs)
         return window_state, window_id
     end
 
-    
     --rs.setWindowState = function(window,window_state,space_map)
     rs.setWindowState = function(window,window_state,all_maps)
         if not window_state then
@@ -218,26 +219,9 @@ return function(rs,hs)
             msg = msg .. "for window " .. window:id()
             rs.issueVerbose(msg, rs.verbose)
         end
-        --print("TARGET SPACE: " .. tostring(target_space))
-        --print("TARGET SPACE TYPE: " .. type(target_space))
 
-        --TODO: deprecate this block:
-        local status, err_msg
-        if rs.spaces_fixed_after_macOS14_5 then
-            --print("WINDOW: " .. window:id())
-            --print("TARGET SPACE: " .. tostring(target_space))
-            --print("TARGET SPACE TYPE: " .. type(target_space))
-            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
-        else
-            -- solution by `cunha`
-            -- (see: https://github.com/Hammerspoon/hammerspoon/pull/3638#issuecomment-2252826567)
-            local target_screen, _ = hs.spaces.spaceDisplay(target_space)
-            status, err_msg = hs.spaces.moveWindowToSpace(window, target_space)
-            window:focus()
-            rs.delayExecution(0.4)
-            window:moveToScreen(target_screen)
-            window:focus()
-        end
+        -- Move to target space (falls back to another desktop/screen if needed)
+        local status, err_msg = rs.moveWindowToSpace(window, target_space)
 
         rs.setFrameState(window, frame_state, fullscreen_state)
         if status then
@@ -245,7 +229,7 @@ return function(rs,hs)
         else
             rs.issueVerbose("failed to set window " .. window:id(), rs.verbose)
             msg = "moveWindowToSpace status (" .. tostring(status)
-            msg = msg .. "): " .. err_msg
+            msg = msg .. "): " .. tostring(err_msg)
             rs.issueVerbose(msg, rs.verbose)
         end
     end

@@ -235,13 +235,19 @@ return function(rs,hs)
                 local n_screen, n_saved = lengthTables(screen_spaces, saved_map)
                 local close_MissionControl = false
                 while n_screen < n_saved do
-                    hs.spaces.addSpaceToScreen(screen_i, close_MissionControl)
+                    local status, err = rs.addSpaceToScreen(screen, close_MissionControl)
+                    if not status then
+                        error("Failed to add space: " .. tostring(err))
+                    end
                     screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
                     n_screen, n_saved = lengthTables(screen_spaces, saved_map)
                 end
                 while n_screen > n_saved do
                     local last_space_id = screen_spaces[n_screen]
-                    hs.spaces.removeSpace(last_space_id, close_MissionControl)
+                    local status, err = rs.removeSpace(last_space_id, close_MissionControl)
+                    if not status then
+                        error("Failed to remove space: " .. tostring(err))
+                    end
                     screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
                     n_screen, n_saved = lengthTables(screen_spaces, saved_map)
                 end
