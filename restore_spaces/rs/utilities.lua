@@ -89,4 +89,51 @@ return function(rs,hs)
         return check
     end
 
+    -- Console banner of a given level, from 1 (strongest) to 5 (weakest). Levels
+    -- 1-3 frame the title with a line above and below; levels 4-5 only
+    -- underline it. Levels 1-2 are centered, and level 1 is in capitals.
+    rs.banner = function(level, title)
+        local styles = {
+            {char = "#", framed = true, centered = true, upper = true},
+            {char = "=", framed = true, centered = true},
+            {char = "-", framed = true},
+            {char = "‾"},
+            {char = "."}
+        }
+        local style = styles[level]
+        if not style then
+            error("Unknown banner level: " .. tostring(level))
+        end
+        title = style.upper and title:upper() or title
+        local rule = string.rep(style.char, rs.banner_width)
+        local margin = 0
+        if style.centered then
+            margin = math.max(0, (rs.banner_width - (utf8.len(title) or #title)) // 2)
+        end
+        local lines = {string.rep(" ", margin) .. title, rule}
+        if style.framed then
+            table.insert(lines, 1, rule)
+        end
+        return table.concat(lines, "\n")
+    end
+
+    -- Print a banner; `lead` (default true) starts it on a new line, because the
+    -- console puts a timestamp before the first line of each print
+    rs.printBanner = function(level, title, lead)
+        print((lead == false and "" or "\n") .. rs.banner(level, title))
+    end
+
+    -- Run `action()` between a start and an end banner (the end one reports the
+    -- elapsed time and whether it failed); errors are raised again afterwards
+    rs.runWithBanner = function(title, action)
+        local start = hs.timer.secondsSinceEpoch()
+        rs.printBanner(2, title)
+        local success, err = xpcall(action, debug.traceback)
+        rs.printBanner(2, string.format("%s: %s (%.1f s)", title,
+            success and "done" or "FAILED", hs.timer.secondsSinceEpoch() - start), false)
+        if not success then
+            error(err, 0)
+        end
+    end
+
 end

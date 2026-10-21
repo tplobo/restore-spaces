@@ -90,61 +90,62 @@ return function(rs,hs)
         return contents
     end
 
+    -- IDs of the spaces listed in `com.apple.spaces.plist`, without the hidden
+    -- "dashboard" space (nil and an error message if the file cannot be read)
+    rs.getPlistSpaces = function()
+        local plist = hs.plist.read("~/Library/Preferences/com.apple.spaces.plist")
+        local config = plist and plist["SpacesDisplayConfiguration"]
+        local monitors = config and config["Management Data"] and config["Management Data"]["Monitors"]
+        if not monitors then
+            return nil, "Failed to read the spaces in com.apple.spaces.plist"
+        end
+        local plist_spaces = {}
+        for _, monitor in ipairs(monitors) do
+            for _, info in ipairs(monitor["Spaces"] or {}) do
+                if info["uuid"] ~= "dashboard" then
+                    table.insert(plist_spaces, info["id64"])
+                end
+            end
+        end
+        return plist_spaces
+    end
+
+    -- Keep only desktops (spaces of type "user"), in the given order. This drops
+    -- the hidden "dashboard" space and the full-screen/split-view spaces. With
+    -- `rs.use_plist_check`, desktops must also be listed in the spaces plist
+    -- (which lags behind right after spaces are added or removed); if macOS
+    -- reports no space types at all, the plist is used instead.
     rs.validateSpaces = function(all_spaces, verbose)
         verbose = verbose or rs.verbose
-        local function extractNestedTable(key_sequence, table)
-            local current_table = table
-            for _, key in ipairs(key_sequence) do
-                if type(current_table) ~= "table" then
-                    error("Value is not a table at key: " .. key)
-                end
-                if current_table[key] then
-                    current_table = current_table[key]
-                else
-                    error("Key not found: " .. key)
-                end
-            end
-            return current_table
+        all_spaces = all_spaces or {}
+        local plist_spaces
+        if rs.use_plist_check then
+            local err
+            plist_spaces, err = rs.getPlistSpaces()
+            if not plist_spaces then error(err) end
         end
 
-        local plist_path = "~/Library/Preferences/com.apple.spaces.plist"
-        local plist_spaces = hs.plist.read(plist_path)
-        if not plist_spaces then
-            print("Failed to read plist file")
-        end
-
-        local count = 0
-        local valid_spaces = {}
-        local all_screens = hs.screen.allScreens()
-        for screen_i in ipairs(all_screens) do
-            local key_sequence = {
-                "SpacesDisplayConfiguration",
-                "Management Data",
-                "Monitors",
-                screen_i,
-                "Spaces",
-            }
-            local all_spaces_info = extractNestedTable(key_sequence, plist_spaces)
-            for _, space_info in ipairs(all_spaces_info) do
-                local uuid = space_info["uuid"]
-                local id = space_info["id64"]
-                if uuid ~= "dashboard" then
-                    count = count + 1
-                    valid_spaces[count] = id
-                end
-                local text = "screen: " .. screen_i .. ", space id: " .. id
-                text = text .. ", space uuid:  " .. uuid
-                rs.issueVerbose(text, verbose)
-            end
-        end
-
-        local validated_spaces = {}
+        local validated_spaces, ignored, untyped = {}, {}, 0
         for _, space in ipairs(all_spaces) do
-            if hs.fnutils.contains(valid_spaces, space) then
+            local space_type = hs.spaces.spaceType(space)
+            if space_type == "user" and (not plist_spaces or rs.contains(plist_spaces, space)) then
                 table.insert(validated_spaces, space)
+            else
+                table.insert(ignored, space .. ":" .. tostring(space_type))
+            end
+            untyped = untyped + (space_type == nil and 1 or 0)
+        end
+        if #all_spaces > 0 and untyped == #all_spaces then
+            plist_spaces = rs.getPlistSpaces()
+            for _, space in ipairs(plist_spaces and all_spaces or {}) do
+                if rs.contains(plist_spaces, space) then
+                    table.insert(validated_spaces, space)
+                end
             end
         end
-
+        if #ignored > 0 then
+            rs.issueVerbose("ignored spaces (id:type): " .. table.concat(ignored, ", "), verbose)
+        end
         return validated_spaces
     end
 

@@ -111,35 +111,61 @@ Up to macOS 14, the native `hs.spaces` functions are used. From macOS 15 on,
 `hs.spaces.moveWindowToSpace` returns `true` without moving anything, and from
 macOS 26/27 on the Mission Control accessibility tree moved from the Dock to
 the `WindowManager` process, which also breaks `gotoSpace`, `addSpaceToScreen`
-and `removeSpace`. The module therefore tries the native function first
-(except for moving) and otherwise drives Mission Control itself:
+and `removeSpace`. The module therefore drives the system itself:
 
 - **Switch/add/remove spaces:** presses the desktop thumbnails (or the add
-  button) through the accessibility API.
-- **Move windows:** drags the window thumbnail onto the target desktop
-  thumbnail with a timed, multi-step synthetic drag (single jumps are ignored by
-  recent macOS versions), and verifies that the window actually arrived.
+  button) in Mission Control through the accessibility API.
+- **Move windows:** two strategies.
+  - `"mission_control"`: drags the window thumbnail onto the desktop thumbnail
+    in Mission Control. Any distance, and the only way to move a window to
+    another screen, but slower and slightly more fragile, since windows are
+    identified by app and title (windows of one app with identical titles are
+    indistinguishable; the first one is used).
+  - `"titlebar"`: holds the window by its title bar while pressing the "Move
+    left/right a space" shortcuts (<kbd>Ctrl</kbd> + arrows, enabled by default
+    in System Settings → Keyboard → Keyboard Shortcuts → Mission Control). Fast
+    for nearby desktops of the same screen, but each desktop crossed takes about
+    half a second (so it is limited to `rs.move_max_hops` desktops per move) and
+    it needs a title bar to grab.
 
-Consequences and limitations:
+  `rs.move_strategy` selects the one used for moves within a screen (the other
+  is the fallback if it fails or exceeds `rs.move_max_hops`); moves between
+  screens always use `"mission_control"`. Apps listed in `rs.move_apps` (_e.g._
+  `mission_control = {"Notes"}`) use only the strategy of their list for moves
+  within a screen, which helps with apps whose title bar holds buttons or tabs.
+  `rs.move_speed` scales the number of steps of the synthetic drag (_e.g._ `2`
+  halves them); raise it, and lower `rs.mc_settle`, until moves start failing,
+  then step back. The test hotkey recommends values.
 
-- Mission Control visibly opens and closes for each operation, so `apply` is
-  slower than on macOS 14. The cursor is moved temporarily and restored.
+### Consequences and limitations:
+
+- Mission Control visibly opens and closes, and the cursor moves, so `apply`
+  is slower than on macOS 14. The cursor is restored afterwards.
 - The window must be visible on the active space of its screen (guaranteed by
   the way `apply` cycles through spaces).
-- Windows are identified in Mission Control by title. Windows with identical
-  titles are indistinguishable (the first thumbnail is used).
-- **Fallback behavior:** if a window cannot be moved to its target desktop (_e.g._
-  the move to a desktop of a different monitor does not work on your macOS
-  version), it is moved to the **first** (or **last**, with
-  `rs.fallback_space = "last"`) desktop of the target monitor; if that fails
-  too, it is moved to the target monitor itself. A warning is printed to the
-  console for each such window and a notification is shown at the end of
-  `apply`.
-- Status: macOS 14 uses the previous (verified) code path. The other paths are
-  **untested** at the time of writing: macOS 15 and 26 have not been verified
-  by anyone, and macOS 27.0 has only been verified by third parties for the
-  approach in general. Timings can be tuned with `rs.mc_timeout`,
-  `rs.mc_pause`, `rs.mc_settle`, `rs.mc_drag_steps` and `rs.mc_drag_pause`.
+- **Fallback behavior:** if a window cannot be moved to its target desktop, it
+  is moved to the **last** (or **first**, with `rs.fallback_space = "first"`)
+  desktop of the target monitor, and if that fails too it stays where it is. A
+  warning is printed to the console for each such window and a notification is
+  shown at the end of `apply`.
+- **Only desktops** are saved and restored for now. Full-screen and split-view
+  spaces (and the windows in them) are ignored: they do not count when comparing
+  the number of spaces, windows inside them are never moved, and they cannot be
+  the target of a move. macOS allows at most 16 spaces per display, which is
+  also the most that `apply` can create.
+- **Missing desktops are appended after the last space** of the screen (macOS
+  offers no way to insert one), so if full-screen spaces sit between desktops,
+  a re-created desktop ends up after them.
+- Required permissions: Accessibility only (_Input Monitoring_ is not needed).
+- Developer note: never use `hs.window:moveToScreen` to relocate windows
+  between desktops, and do not drag windows between screens by their title bar.
+  Both move the window to the other monitor but leave it assigned to the
+  desktop it came from, which can make applications unresponsive to title-bar
+  drags until they are restarted.
+- Status: macOS 14 uses the previous (verified) code path. On macOS 27.0.1,
+  switching, adding and removing desktops and both move strategies have been
+  verified by the author; macOS 15 and 26 are untested. Run the test hotkey to
+  produce a report for bug reports.
 
 ### Acknowledgements
 
@@ -309,14 +335,13 @@ of the macOS 15+ work, except where noted. Ordered by severity.
    `nil`; only the "all screens" branch handles that, so `ipairs(nil)` raises.
    Fix: `all_entities = ... or {}` in the screen branch.
 
-1. **`validateSpaces` plist handling** (`plumbing.lua`). If the plist read fails
-   it only prints and then fails with a misleading "Value is not a table" error
-   (fail early with a clear message). It indexes
-   `Monitors[screen_i]` using `hs.screen.allScreens()` order, which may differ
-   from the plist order on multi-monitor setups. `uuid` can be `nil`, which
-   breaks the debug concatenation. The key path is untested on macOS 27; if it
-   changed, the error should name the missing key (it does) and the dashboard
-   filter could use `hs.spaces.spaceType(id) ~= "system"` instead of the plist.
+1. **`validateSpaces` keeps desktops only** (`plumbing.lua`). It no longer reads
+   `com.apple.spaces.plist`, which lags behind right after spaces are added or
+   removed (this made `rebuildEnvironment` keep adding desktops until macOS
+   refused). It keeps only spaces of type `"user"`, so the hidden dashboard and
+   full-screen/split-view spaces are neither saved nor restored. Environments
+   saved before this change must be saved again, because their `space_map`
+   counted full-screen spaces.
 
 1. **`getFrameState` ignores the screen origin** (`plumbing.lua`). Left/right
    edge and full-width checks compare global frame coordinates with
@@ -352,6 +377,39 @@ of the macOS 15+ work, except where noted. Ordered by severity.
    words in the package should be revised to ensure comprehension and an elegant
    implementation.
 
+1. **Configurable title-bar grab point.** The `"titlebar"` strategy grabs the
+   window 10 px to the right of the zoom button. Apps with buttons or tabs
+   there (_e.g._ Safari's sidebar button) need `rs.move_apps`; a per-app grab
+   offset (_e.g._ near the top-left corner) would make the strategy work for
+   them too.
+
+1. **Batch window moves.** Every `mission_control` move opens and closes
+   Mission Control. Grouping all moves of one space (or screen) in a single
+   session would make `apply` considerably faster.
+
+1. **Full-screen and split-view spaces.** They are ignored for now, because they
+   cannot be treated like desktops: they belong to their apps, they are created
+   by dragging a window to the gap between two space thumbnails in Mission
+   Control and waiting for the new-space suggestion (the "+" button only creates
+   desktops, and no keyboard shortcut is known), and swapping two of them made
+   `apply` corrupt the layout (apps showing on several desktops, windows in the
+   middle of a space). Still needed: remember full-screen spaces by their apps
+   instead of position, create them by dragging, drop windows on the left/right
+   part of a full-screen space thumbnail (_e.g._ 25 %/75 % of its width;
+   unverified) to choose the side, and revisit `setFullScreen(true)` in
+   `setFrameState` for windows that were split-view.
+
+1. **Verbose logging names.** `issueVerbose` prints `(unknown)` when called from
+   anonymous functions (`debug.getinfo(2, "n")` has no name there). `verbose`
+   only gates `issueVerbose` messages, so `testSpaceControl` prints its report
+   regardless.
+
+1. **Desktop order.** `apply` can only append missing desktops after the last
+   space of a screen, so it cannot restore the position of a desktop that was
+   deleted between other spaces (and, with full-screen spaces in between, the
+   re-created desktop ends up after them). Reordering requires dragging desktop
+   thumbnails in Mission Control.
+
 ## Known issues
 
 1. The **"Dashboard"** feature may create a hidden space that cannot be
@@ -382,8 +440,12 @@ not work and there are [no alternative official solutions
    killall Dock
 ```
 
-Instead, that `plist` file is read and used to validate the list of spaces
-used to save the environment state.
+Instead, only spaces of type `"user"` (desktops) are used, which excludes the
+dashboard. If that is not enough on your mac, set
+`hs.restore_spaces.use_plist_check = true` to also require desktops to be
+listed in the `plist` file (which lags behind right after spaces are added or
+removed). The `plist` is also used automatically if macOS reports no space
+types at all.
 
 1. There are no official APIs for putting two windows in **split-view**
    fullscreen mode, so the current approach is to place all windows that had a

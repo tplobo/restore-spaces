@@ -1,6 +1,5 @@
 -- `spaces.lua`
 
--- Initialize space-control functions (native API with Mission Control fallback)
 return function(rs,hs)
 
     -- Processes that may host the Mission Control accessibility tree (in order)
@@ -31,6 +30,22 @@ return function(rs,hs)
         return found
     end
 
+    local function filterList(list, predicate)
+        local result = {}
+        for _, element in ipairs(list) do
+            if predicate(element) then
+                table.insert(result, element)
+            end
+        end
+        return result
+    end
+
+    local function indexOf(list, value)
+        for i, element in ipairs(list) do
+            if element == value then return i end
+        end
+    end
+
     -- Bounding box {x, y, w, h} of an accessibility element
     local function getBox(element)
         local position = getAttribute(element, "AXPosition")
@@ -40,8 +55,8 @@ return function(rs,hs)
         end
     end
 
-    -- Point on an element: its center or, if `anchored`, its reported anchor
-    -- (`WindowManager` reports an anchor that is already inside the thumbnail)
+    -- Point on an element: its center or, if `anchored`, its reported position
+    -- (`WindowManager` reports the CENTER of a space thumbnail as its position)
     local function getPoint(element, anchored)
         local box = getBox(element)
         if not box then return nil end
@@ -63,11 +78,13 @@ return function(rs,hs)
         end
     end
 
-    -- Poll `predicate` until it returns a truthy value or `rs.mc_timeout` expires
-    local function waitUntil(predicate)
+    -- Poll `predicate` until it returns a truthy value or the timeout expires
+    -- (`rs.mc_timeout` by default)
+    local function waitUntil(predicate, timeout)
+        timeout = timeout or rs.mc_timeout
         local waited = 0
         local value = predicate()
-        while not value and waited < rs.mc_timeout do
+        while not value and waited < timeout do
             rs.delayExecution(rs.mc_pause)
             waited = waited + rs.mc_pause
             value = predicate()
@@ -137,6 +154,7 @@ return function(rs,hs)
     end
 
     -- Run `action(display, mc)` for the Mission Control display of `screen`
+    -- (the tree can be incomplete right after opening, so wait for it)
     local function withDisplay(screen, action, keep_open)
         return withMissionControl(function(mc)
             local display = findDisplay(mc, screen) or waitUntil(function()
@@ -156,23 +174,33 @@ return function(rs,hs)
         return list and getAttribute(list, "AXChildren") or {}
     end
 
-    -- Position of a space among the thumbnails of its screen (the hidden
-    -- "dashboard" space has no thumbnail), and that screen
+    -- Space IDs of a screen in Mission Control order (the hidden "dashboard"
+    -- space has no thumbnail)
+    local function getScreenSpaces(screen)
+        return filterList(hs.spaces.allSpaces()[screen:getUUID()] or {}, function(id)
+            return hs.spaces.spaceType(id) ~= "system"
+        end)
+    end
+
+    -- Position of a space among the thumbnails of its screen, and that screen
     local function getSpaceIndex(space)
-        local uuid = hs.spaces.spaceDisplay(space)
-        local index = 0
-        for _, id in ipairs(hs.spaces.allSpaces()[uuid] or {}) do
-            if hs.spaces.spaceType(id) ~= "system" then
-                index = index + 1
-            end
-            if id == space then
-                return index, getScreenByUUID(uuid)
-            end
-        end
+        local screen = getScreenByUUID(hs.spaces.spaceDisplay(space))
+        return screen and indexOf(getScreenSpaces(screen), space), screen
     end
 
     local function countSpaces(screen)
         return #(hs.spaces.spacesForScreen(screen:id()) or {})
+    end
+
+    local function isOnSpace(window, space)
+        return rs.contains(hs.spaces.windowSpaces(window) or {}, space)
+    end
+
+    -- Screen that owns the window's space (more reliable than `window:screen()`,
+    -- which follows the window's frame and can disagree right after a move)
+    local function getWindowScreen(window)
+        local space = (hs.spaces.windowSpaces(window) or {})[1]
+        return space and getScreenByUUID(hs.spaces.spaceDisplay(space)) or window:screen()
     end
 
     -- Hover the top edge of a display, which expands its spaces bar
@@ -187,7 +215,7 @@ return function(rs,hs)
     -- Switch to a space by pressing its thumbnail in Mission Control
     local function gotoSpaceViaMC(space)
         local index, screen = getSpaceIndex(space)
-        if not screen then
+        if not (index and screen) then
             return nil, "unknown space: " .. tostring(space)
         end
         local cursor = hs.mouse.absolutePosition()
@@ -252,7 +280,7 @@ return function(rs,hs)
             hoverTopEdge(display)
             local button = findElements(display, "mc.spaces.add", 4)[1]
             if not (button and button:performAction("AXPress")) then
-                error("add-space button not found", 0)
+                error("add-space button not available (macOS allows at most 16 spaces per display)", 0)
             end
             if not waitUntil(function() return countSpaces(screen) > count end) then
                 error("space was not added", 0)
@@ -268,7 +296,7 @@ return function(rs,hs)
             return true
         end
         local index, screen = getSpaceIndex(space)
-        if not screen then
+        if not (index and screen) then
             return nil, "unknown space: " .. tostring(space)
         end
         return withDisplay(screen, function(display)
@@ -290,7 +318,79 @@ return function(rs,hs)
         end, close_mc == false)
     end
 
-    -- Window thumbnails of a display (only those of the `source` space, if given)
+    local function postMouse(kind, point, previous, number)
+        local event = hs.eventtap.event
+        local mouse = event.newMouseEvent(event.types[kind], point)
+        local function round(value) return math.floor(value + 0.5) end
+        local pressed = kind == "leftMouseDown" or kind == "leftMouseDragged"
+        mouse:setProperty(event.properties.mouseEventNumber, number)
+        mouse:setProperty(event.properties.mouseEventClickState, pressed and 1 or 0)
+        mouse:setProperty(event.properties.mouseEventPressure, pressed and 1 or 0)
+        mouse:setProperty(event.properties.mouseEventDeltaX, round(point.x - previous.x))
+        mouse:setProperty(event.properties.mouseEventDeltaY, round(point.y - previous.y))
+        mouse:post()
+    end
+
+    -- Drag (button held) from one point to another in small timed steps (at
+    -- least `rs.mc_drag_steps`, one per ~20 pixels), divided by `rs.move_speed`
+    local function glide(from, to, number, steps)
+        local distance = math.sqrt((to.x - from.x) ^ 2 + (to.y - from.y) ^ 2)
+        steps = steps or math.max(rs.mc_drag_steps, math.ceil(distance / 20))
+        steps = math.max(5, math.ceil(steps / rs.move_speed))
+        local previous = from
+        for step = 1, steps do
+            local point = {
+                x = from.x + (to.x - from.x) * step / steps,
+                y = from.y + (to.y - from.y) * step / steps
+            }
+            postMouse("leftMouseDragged", point, previous, number)
+            previous = point
+            rs.delayExecution(rs.mc_drag_pause)
+        end
+        return to
+    end
+
+    -- Press the mouse at `from`, run `action(gesture)` (`gesture.drag(to, steps)`
+    -- moves the pressed mouse) and always release it and restore the cursor,
+    -- so that no application is ever left with a pressed button
+    local function holdMouse(from, action)
+        local cursor = hs.mouse.absolutePosition()
+        drag_counter = drag_counter + 1
+        local number, point = drag_counter, from
+        local gesture = {
+            drag = function(to, steps) point = glide(point, to, number, steps) end
+        }
+        local success, err = pcall(function()
+            hs.mouse.absolutePosition(from)
+            postMouse("mouseMoved", from, from, number)
+            rs.delayExecution(rs.mc_settle)
+            postMouse("leftMouseDown", from, from, number)
+            rs.delayExecution(rs.mc_pause)
+            action(gesture)
+        end)
+        postMouse("leftMouseUp", point, point, number)
+        hs.mouse.absolutePosition(cursor)
+        if not success then error(err, 0) end
+    end
+
+    -- Strip invisible direction marks, which some apps put in their titles
+    local function cleanTitle(text)
+        return (text:gsub("\226\128[\142\143]", ""))
+    end
+
+    -- Compare a thumbnail title with a window title; Mission Control may shorten
+    -- long titles with a middle ellipsis
+    local function titleMatches(shown, title)
+        shown, title = cleanTitle(shown), cleanTitle(title)
+        if shown == title then return true end
+        local head, tail = shown:match("^(.-)…(.*)$")
+        return head ~= nil
+            and #title >= #head + #tail
+            and title:sub(1, #head) == head
+            and (tail == "" or title:sub(-#tail) == tail)
+    end
+
+    -- Window thumbnails of a display that belong to the `source` space
     local function getWindowThumbnails(display, source)
         local thumbnails = {}
         local function walk(node, depth)
@@ -312,66 +412,18 @@ return function(rs,hs)
         return thumbnails
     end
 
-    -- Strip invisible direction marks, which some apps put in their titles
-    local function cleanTitle(text)
-        return (text:gsub("\226\128[\142\143]", ""))
-    end
-
-    -- Compare a thumbnail title with a window title; Mission Control may shorten
-    -- long titles with a middle ellipsis
-    local function titleMatches(shown, title)
-        shown, title = cleanTitle(shown), cleanTitle(title)
-        if shown == title then return true end
-        local head, tail = shown:match("^(.-)…(.*)$")
-        return head ~= nil
-            and #title >= #head + #tail
-            and title:sub(1, #head) == head
-            and (tail == "" or title:sub(-#tail) == tail)
-    end
-
-    local function postMouse(kind, point, previous, number)
-        local event = hs.eventtap.event
-        local mouse = event.newMouseEvent(event.types[kind], point)
-        local function round(value) return math.floor(value + 0.5) end
-        local pressed = kind == "leftMouseDown" or kind == "leftMouseDragged"
-        mouse:setProperty(event.properties.mouseEventNumber, number)
-        mouse:setProperty(event.properties.mouseEventClickState, pressed and 1 or 0)
-        mouse:setProperty(event.properties.mouseEventPressure, pressed and 1 or 0)
-        mouse:setProperty(event.properties.mouseEventDeltaX, round(point.x - previous.x))
-        mouse:setProperty(event.properties.mouseEventDeltaY, round(point.y - previous.y))
-        mouse:post()
-    end
-
-    -- Drag (button held) from one point to another in small timed steps
-    -- (at least `rs.mc_drag_steps`, and one step per ~20 pixels)
-    local function glide(from, to, number, steps)
-        local distance = math.sqrt((to.x - from.x) ^ 2 + (to.y - from.y) ^ 2)
-        steps = steps or math.max(rs.mc_drag_steps, math.ceil(distance / 20))
-        local previous = from
-        for step = 1, steps do
-            local point = {
-                x = from.x + (to.x - from.x) * step / steps,
-                y = from.y + (to.y - from.y) * step / steps
-            }
-            postMouse("leftMouseDragged", point, previous, number)
-            previous = point
-            rs.delayExecution(rs.mc_drag_pause)
-        end
-        return to
-    end
-
     -- Thumbnail of a window among those of its space, and how many candidates
     -- there were. Matches by bundle ID (when the identifier carries one) and
     -- then by title, since some apps (_e.g._ Safari) report an empty title.
     local function findWindowThumbnail(thumbnails, window)
         local bundle = window:application():bundleID()
         local title = window:title()
-        local pool = hs.fnutils.filter(thumbnails, function(thumbnail)
+        local pool = filterList(thumbnails, function(thumbnail)
             local id = tostring(getAttribute(thumbnail, "AXIdentifier"))
             local owner = id:match("^(.*)%.space%.%d+$")
             return not owner or owner == bundle
         end)
-        local titled = hs.fnutils.filter(pool, function(thumbnail)
+        local titled = filterList(pool, function(thumbnail)
             return titleMatches(getAttribute(thumbnail, "AXTitle") or "", title)
         end)
         if #titled > 0 then
@@ -380,10 +432,24 @@ return function(rs,hs)
         return pool[1], #pool
     end
 
-    -- Move a window by dragging its Mission Control thumbnail onto a space
-    -- thumbnail; success is verified with the window's actual spaces.
-    -- Windows of one app with identical (or empty) titles are
-    -- indistinguishable (the first one is used).
+    -- Point of an element once it stops moving (animations are over)
+    local function getSettledPoint(element, anchored)
+        local previous
+        local function settled()
+            local point = getPoint(element, anchored)
+            local same = point and previous
+                and math.abs(point.x - previous.x) < 1 and math.abs(point.y - previous.y) < 1
+            previous = point
+            return same and point
+        end
+        return waitUntil(settled) or getPoint(element, anchored)
+    end
+
+    -- Strategy "mission_control": drag the window thumbnail onto a space
+    -- thumbnail; works across screens and for any distance, but is slower and
+    -- identifies windows by title (identical titles: the first one is used).
+    -- The window must be on the active space of its screen, because Mission
+    -- Control only lays out the windows of the active spaces.
     local function moveWindowViaMC(window, space)
         local index, target_screen = getSpaceIndex(space)
         local source = (hs.spaces.windowSpaces(window) or {})[1]
@@ -391,10 +457,12 @@ return function(rs,hs)
             return nil, "unknown source or target space"
         end
         if source == space then return true end
+        if hs.spaces.activeSpaceOnScreen(getWindowScreen(window)) ~= source then
+            return nil, "window is not on the active space of its screen"
+        end
 
-        local cursor = hs.mouse.absolutePosition()
-        local result, err = withMissionControl(function(mc)
-            local source_display = findDisplay(mc, window:screen())
+        return withMissionControl(function(mc)
+            local source_display = findDisplay(mc, getWindowScreen(window))
             local target_display = findDisplay(mc, target_screen)
             if not (source_display and target_display) then
                 error("display not found in Mission Control", 0)
@@ -411,117 +479,30 @@ return function(rs,hs)
 
             -- Hover the top edge of the target display to expand its spaces bar
             local box = getBox(target_display)
-            local start = getPoint(thumbnail)
             local top = {x = box.x + box.w / 2, y = box.y + 2}
-            local trace = {}
-            local function note(label, point)
-                table.insert(trace, point
-                    and string.format("%s (%.0f,%.0f)", label, point.x, point.y)
-                    or label .. " n/a")
-            end
-            note("start", start)
-            drag_counter = drag_counter + 1
-            local number, last = drag_counter, start
-            local success, drag_err = pcall(function()
-                hs.mouse.absolutePosition(start)
-                postMouse("mouseMoved", start, start, number)
+            local start, drop = getSettledPoint(thumbnail)
+            holdMouse(start, function(gesture)
+                gesture.drag(top)
+                gesture.drag({x = top.x + 30, y = top.y}, 8)
+                gesture.drag(top, 8)
                 rs.delayExecution(rs.mc_settle)
-                postMouse("leftMouseDown", start, start, number)
-                rs.delayExecution(2 * rs.mc_pause)
-                last = glide(start, top, number)
-                last = glide(top, {x = top.x + 30, y = top.y}, number, 8)
-                last = glide(last, top, number, 8)
-                rs.delayExecution(rs.mc_settle)
-                -- `WindowManager` reports the CENTER of a space thumbnail
                 local target = getThumbnails(target_display)[index]
-                local drop = target and getPoint(target, mc.host == mc_hosts[1])
+                drop = target and getSettledPoint(target, mc.host == mc_hosts[1])
                 if not drop then
                     error("target space thumbnail not found", 0)
                 end
-                note("drop", drop)
-                last = glide(top, drop, number)
+                -- A collapsed bar reports thumbnails above the display edge
+                drop.y = math.max(drop.y, box.y + 15)
+                gesture.drag(drop)
                 rs.delayExecution(rs.mc_settle)
             end)
-            postMouse("leftMouseUp", last, last, number)
-            if not success then error(drag_err, 0) end
-
-            local arrived = function()
-                return rs.contains(hs.spaces.windowSpaces(window) or {}, space)
-            end
-            if not waitUntil(arrived) then
-                error("window did not arrive at space " .. tostring(space)
-                    .. " (" .. table.concat(trace, "; ") .. ")", 0)
+            if not waitUntil(function() return isOnSpace(window, space) end) then
+                local after = getPoint(thumbnail) or start
+                error(string.format("window did not arrive at space %s (thumbnail %.0f,%.0f -> %.0f,%.0f; drop %.0f,%.0f)",
+                    tostring(space), start.x, start.y, after.x, after.y, drop.x, drop.y), 0)
             end
             return true
         end)
-        hs.mouse.absolutePosition(cursor)
-        return result, err
-    end
-
-    -- Move a window by sending it to the target screen while the target space
-    -- is active there (a window moved to a screen joins that screen's active
-    -- space). Moves within one screen hop through another screen first, so
-    -- they need 2+ screens. The previously active space is restored afterwards.
-    local function moveWindowViaScreens(window, space)
-        local target = getScreenByUUID(hs.spaces.spaceDisplay(space))
-        if not target then
-            return nil, "unknown target space"
-        end
-        local function onSpace()
-            return rs.contains(hs.spaces.windowSpaces(window) or {}, space)
-        end
-        -- Focusing the window around the move makes macOS reassign its space
-        local function send(screen)
-            window:focus()
-            rs.delayExecution(rs.mc_settle)
-            window:moveToScreen(screen, true, true)
-            waitUntil(function() return window:screen() == screen end)
-            window:focus()
-            rs.delayExecution(rs.mc_settle)
-        end
-
-        if window:screen() == target and onSpace() then return true end
-        local home = hs.spaces.activeSpaceOnScreen(target)
-        if window:screen() == target then
-            local hop
-            for _, screen in ipairs(hs.screen.allScreens()) do
-                if screen ~= target then hop = hop or screen end
-            end
-            if not hop then
-                return nil, "same-screen moves need a second screen"
-            end
-            send(hop)
-        end
-        if home ~= space then
-            local status, err = rs.gotoSpace(space)
-            if not status then return nil, err end
-        end
-        send(target)
-        local arrived = waitUntil(onSpace)
-        local where = hs.inspect(hs.spaces.windowSpaces(window) or {}, {newline = "", indent = ""})
-        if home ~= space then rs.gotoSpace(home) end
-        if not arrived then
-            return nil, "window did not land on space " .. tostring(space)
-                .. " (is on " .. where .. ", screen '" .. window:screen():name() .. "')"
-        end
-        return true
-    end
-
-    -- Non-system space IDs of a screen, in Mission Control order
-    local function getScreenSpaces(screen)
-        local ids = {}
-        for _, id in ipairs(hs.spaces.allSpaces()[screen:getUUID()] or {}) do
-            if hs.spaces.spaceType(id) ~= "system" then
-                table.insert(ids, id)
-            end
-        end
-        return ids
-    end
-
-    local function indexOf(list, value)
-        for i, element in ipairs(list) do
-            if element == value then return i end
-        end
     end
 
     -- Point on the title bar, right of the zoom button, to grab a window
@@ -534,40 +515,45 @@ return function(rs,hs)
         return {x = frame.x + 80, y = frame.y + 14}
     end
 
-    -- Move a window within its screen by holding its title bar while switching
-    -- spaces with the "Move left/right a space" shortcuts (ctrl+arrows, which
-    -- need the fn flag). The view is restored afterwards.
+    -- Strategy "titlebar": hold the window by its title bar while switching
+    -- spaces with the "Move left/right a space" shortcuts (ctrl+arrows), up to
+    -- `rs.move_max_hops` spaces. Fast for nearby spaces, needs a title bar, and
+    -- cannot change the window's screen: dragging a window between screens
+    -- this way can leave it assigned to the desktop of its old screen.
     local function moveWindowViaTitlebar(window, space)
-        local target_screen = getScreenByUUID(hs.spaces.spaceDisplay(space))
-        if not target_screen or window:screen() ~= target_screen then
-            return nil, "window is not on the target screen"
+        local target = getScreenByUUID(hs.spaces.spaceDisplay(space))
+        if not target then
+            return nil, "unknown target space"
         end
-        local windowSpaces = function() return hs.spaces.windowSpaces(window) or {} end
-        if rs.contains(windowSpaces(), space) then return true end
-
-        local spaces = getScreenSpaces(target_screen)
-        local home = hs.spaces.activeSpaceOnScreen(target_screen)
+        if getWindowScreen(window) ~= target then
+            return nil, "windows cannot change screen with the title bar (use mission_control)"
+        end
+        if isOnSpace(window, space) then return true end
+        local spaces = getScreenSpaces(target)
+        local home = hs.spaces.activeSpaceOnScreen(target)
         local from, to = indexOf(spaces, home), indexOf(spaces, space)
-        if not (from and to and rs.contains(windowSpaces(), home)) then
+        if not (from and to) then
+            return nil, "unknown space order"
+        end
+        local hops = math.abs(to - from)
+        if hops > rs.move_max_hops then
+            return nil, string.format("%d hops exceed the limit of %d", hops, rs.move_max_hops)
+        end
+        if not isOnSpace(window, home) then
             return nil, "window is not on the active space of its screen"
         end
 
+        window:focus()
+        rs.delayExecution(rs.mc_settle)
         local grab = getGrabPoint(window)
-        local cursor = hs.mouse.absolutePosition()
-        local direction = to > from and 1 or -1
-        drag_counter = drag_counter + 1
-        local number, last = drag_counter, grab
-        local success, err = pcall(function()
-            hs.mouse.absolutePosition(grab)
-            postMouse("mouseMoved", grab, grab, number)
-            rs.delayExecution(rs.mc_pause)
-            postMouse("leftMouseDown", grab, grab, number)
-            rs.delayExecution(rs.mc_pause)
-            last = glide(grab, {x = grab.x + 8, y = grab.y + 8}, number, 8)
-            for position = from + direction, to, direction do
-                hs.eventtap.keyStroke({"ctrl", "fn"}, direction > 0 and "right" or "left", 0)
+        local step = to > from and 1 or -1
+        local success, err = pcall(holdMouse, grab, function(gesture)
+            gesture.drag({x = grab.x + 8, y = grab.y + 8})
+            for position = from + step, to, step do
+                -- Arrow keys carry the `fn` flag on real keyboards (macOS needs it)
+                hs.eventtap.keyStroke({"ctrl", "fn"}, step > 0 and "right" or "left", 0)
                 local reached = function()
-                    return hs.spaces.activeSpaceOnScreen(target_screen) == spaces[position]
+                    return hs.spaces.activeSpaceOnScreen(target) == spaces[position]
                 end
                 if not waitUntil(reached) then
                     error("space switch failed (are the 'Move left/right a space' shortcuts enabled?)", 0)
@@ -575,235 +561,102 @@ return function(rs,hs)
                 rs.delayExecution(rs.mc_pause)
             end
         end)
-        postMouse("leftMouseUp", last, last, number)
-        local arrived = success and waitUntil(function()
-            return rs.contains(windowSpaces(), space)
-        end)
-        if hs.spaces.activeSpaceOnScreen(target_screen) ~= home then
-            gotoSpaceViaMC(home)
-        end
-        hs.mouse.absolutePosition(cursor)
-        if not success then return nil, err end
-        if not arrived then return nil, "window did not follow the space switch" end
-        return true
-    end
-
-    -- JavaScript for Automation program that replays a list of mouse/keyboard
-    -- actions as HID-level events, the closest to real hardware input that
-    -- needs no compiled helper
-    local jxa_script = [==[
-ObjC.import("CoreGraphics");
-ObjC.import("Foundation");
-function run(argv) {
-    var job = JSON.parse(argv[0]);
-    var source = $.CGEventSourceCreate($.kCGEventSourceStateHIDSystemState);
-    var kinds = {
-        move: $.kCGEventMouseMoved, down: $.kCGEventLeftMouseDown,
-        drag: $.kCGEventLeftMouseDragged, up: $.kCGEventLeftMouseUp
-    };
-    job.actions.forEach(function (a) {
-        var event;
-        if (a.kind === "wait") {
-            $.NSThread.sleepForTimeInterval(a.seconds);
-            return;
-        } else if (a.kind === "key") {
-            event = $.CGEventCreateKeyboardEvent(source, a.code, a.down);
-            $.CGEventSetFlags(event, a.flags);
-        } else {
-            event = $.CGEventCreateMouseEvent(source, kinds[a.kind],
-                $.CGPointMake(a.x, a.y), $.kCGMouseButtonLeft);
-            $.CGEventSetIntegerValueField(event, $.kCGMouseEventNumber, job.number);
-            $.CGEventSetIntegerValueField(event, $.kCGMouseEventClickState, 1);
-            $.CGEventSetIntegerValueField(event, $.kCGMouseEventDeltaX, a.dx);
-            $.CGEventSetIntegerValueField(event, $.kCGMouseEventDeltaY, a.dy);
-            $.CGEventSetDoubleValueField(event, $.kCGMouseEventPressure, a.kind === "up" ? 0 : 1);
-        }
-        $.CGEventPost($.kCGHIDEventTap, event);
-    });
-    return "ok";
-}
-]==]
-
-    -- Replay a list of actions with the JXA program above
-    local function postGesture(actions)
-        drag_counter = drag_counter + 1
-        local job = hs.json.encode({number = drag_counter, actions = actions})
-        local command = string.format("/usr/bin/osascript -l JavaScript -e '%s' '%s' 2>&1",
-            jxa_script, job)
-        local output, status = hs.execute(command, true)
-        if not status then
-            return nil, output
-        end
-        return true
-    end
-
-    local function mouseAction(kind, point, previous)
-        return {
-            kind = kind, x = point.x, y = point.y,
-            dx = math.floor(point.x - previous.x + 0.5),
-            dy = math.floor(point.y - previous.y + 0.5)
-        }
-    end
-
-    -- Actions to press the mouse at `from`, drag to `to`, press the "Move
-    -- left/right a space" shortcut `hops` times (left control + arrow, with the
-    -- raw flags of a real keyboard) and release
-    local function buildGesture(from, to, hops, direction)
-        local actions = {
-            mouseAction("move", from, from), {kind = "wait", seconds = rs.mc_settle},
-            mouseAction("down", from, from), {kind = "wait", seconds = rs.mc_pause}
-        }
-        local previous = from
-        for step = 1, rs.mc_drag_steps do
-            local point = {
-                x = from.x + (to.x - from.x) * step / rs.mc_drag_steps,
-                y = from.y + (to.y - from.y) * step / rs.mc_drag_steps
-            }
-            table.insert(actions, mouseAction("drag", point, previous))
-            table.insert(actions, {kind = "wait", seconds = rs.mc_drag_pause})
-            previous = point
-        end
-        local arrow = direction > 0 and 124 or 123
-        for _ = 1, hops do
-            table.insert(actions, {kind = "key", code = 59, down = true, flags = 0x40001})
-            table.insert(actions, {kind = "wait", seconds = rs.mc_pause})
-            table.insert(actions, {kind = "key", code = arrow, down = true, flags = 0xA40001})
-            table.insert(actions, {kind = "key", code = arrow, down = false, flags = 0xA40001})
-            table.insert(actions, {kind = "key", code = 59, down = false, flags = 0})
-            table.insert(actions, {kind = "wait", seconds = 2 * rs.mc_settle + 0.2})
-        end
-        table.insert(actions, mouseAction("up", previous, previous))
-        return actions
-    end
-
-    -- Where a window is according to the API and, as ground truth, according
-    -- to Mission Control (its thumbnails carry the ID of the window's space)
-    local function locate(window)
-        local bundle = window:application():bundleID()
-        local title = window:title()
-        local found = {}
-        withMissionControl(function(mc)
-            for _, display in ipairs(mc.displays) do
-                for _, thumbnail in ipairs(getWindowThumbnails(display)) do
-                    local id = tostring(getAttribute(thumbnail, "AXIdentifier"))
-                    local owner, space = id:match("^(.*)%.space%.(%d+)$")
-                    if owner == bundle and titleMatches(getAttribute(thumbnail, "AXTitle") or "", title) then
-                        table.insert(found, tonumber(space))
-                    end
-                end
-            end
-            return true
-        end)
-        return {api = hs.spaces.windowSpaces(window) or {}, mc = found, screen = window:screen():name()}
-    end
-
-    local function describeLocation(location)
-        return string.format("api {%s}, Mission Control {%s}, screen '%s'",
-            table.concat(location.api, ","), table.concat(location.mc, ","), location.screen)
-    end
-
-    -- Whether either source says the window is on the space; also its location
-    local function isOnSpace(window, space)
-        local location = locate(window)
-        return rs.contains(location.api, space) or rs.contains(location.mc, space), location
-    end
-
-    -- Move a window by holding its title bar while switching spaces with the
-    -- "Move left/right a space" shortcuts, all posted as HID-level events.
-    -- Windows on other screens are first sent to the target screen. The view
-    -- is restored afterwards.
-    local function moveWindowViaHID(window, space)
-        local target = getScreenByUUID(hs.spaces.spaceDisplay(space))
-        if not target then
-            return nil, "unknown target space"
-        end
-        if window:screen() == target and rs.contains(hs.spaces.windowSpaces(window) or {}, space) then
-            return true
-        end
-        if window:screen() ~= target then
-            window:moveToScreen(target, true, true)
-            waitUntil(function() return window:screen() == target end)
-            rs.delayExecution(rs.mc_settle)
-        end
-
-        local spaces = getScreenSpaces(target)
-        local home = hs.spaces.activeSpaceOnScreen(target)
-        local from, to = indexOf(spaces, home), indexOf(spaces, space)
-        if not (from and to) then
-            return nil, "unknown space order"
-        end
-        if from == to then
-            return isOnSpace(window, space)
-        end
-
-        window:focus()
-        rs.delayExecution(rs.mc_settle)
-        local grab = getGrabPoint(window)
-        local cursor = hs.mouse.absolutePosition()
-        local nudge = {x = grab.x + 8, y = grab.y + 8}
-        local status, err = postGesture(buildGesture(grab, nudge, math.abs(to - from), to > from and 1 or -1))
-        hs.mouse.absolutePosition(cursor)
-        rs.delayExecution(rs.mc_settle)
-        local arrived, location
-        if status then
-            arrived, location = isOnSpace(window, space)
-        end
+        local arrived = success and waitUntil(function() return isOnSpace(window, space) end)
         if hs.spaces.activeSpaceOnScreen(target) ~= home then
-            gotoSpaceViaMC(home)
+            rs.gotoSpace(home)
         end
-        if not status then
-            return nil, "gesture failed: " .. tostring(err)
+        if not success then
+            return nil, err
         elseif not arrived then
-            return nil, "window did not follow (" .. describeLocation(location) .. ")"
+            return nil, "window did not follow the space switch"
         end
         return true
     end
 
-    -- Strategies to move windows from macOS 15 on; the last one that worked
-    -- is tried first
-    local movers = {moveWindowViaHID, moveWindowViaScreens, moveWindowViaMC, moveWindowViaTitlebar}
+    -- Strategies available to move windows (macOS 15 and later)
+    local movers = {titlebar = moveWindowViaTitlebar, mission_control = moveWindowViaMC}
 
-    -- Native API up to macOS 14 (verified there); from macOS 15 it reports
+    -- Strategies to try for a window: "mission_control" alone for moves between
+    -- screens; otherwise the per-app override alone, or else the configured
+    -- strategy followed by the other as a fallback
+    local function getStrategies(window, space)
+        local target = getScreenByUUID(hs.spaces.spaceDisplay(space))
+        if getWindowScreen(window) ~= target then
+            return {"mission_control"}
+        end
+        local app = window:application():name()
+        for name, apps in pairs(rs.move_apps) do
+            if rs.contains(apps, app) then
+                return {name}
+            end
+        end
+        if not movers[rs.move_strategy] then
+            error("Unknown move strategy: " .. tostring(rs.move_strategy))
+        end
+        return {rs.move_strategy, rs.move_strategy == "titlebar" and "mission_control" or "titlebar"}
+    end
+
+    -- The native move is verified up to macOS 14; from macOS 15 it reports
     -- success without moving the window, so the strategies above are used
+    local function useNativeMove()
+        return hs.host.operatingSystemVersion().major <= 14
+    end
+
     local function moveWindow(window, space)
-        if hs.host.operatingSystemVersion().major <= 14 then
+        if useNativeMove() then
             return hs.spaces.moveWindowToSpace(window, space)
         end
         local errors = {}
-        for i, mover in ipairs(movers) do
-            local status, err = mover(window, space)
-            if status then
-                movers[1], movers[i] = movers[i], movers[1]
-                return true
+        for _, name in ipairs(getStrategies(window, space)) do
+            local success, status, err = pcall(movers[name], window, space)
+            if not success then
+                status, err = nil, status
             end
-            table.insert(errors, tostring(err))
+            if status then return true end
+            table.insert(errors, name .. ": " .. tostring(err))
         end
         return nil, table.concat(errors, " | ")
     end
 
-    -- Move a window to a space. If that fails, the window goes to the fallback
-    -- space of the target screen, or else to that screen (visible console
-    -- warning in all cases).
+    -- First/last user space (per `rs.fallback_space`) of the screen of a space
+    local function getFallbackSpace(space)
+        local screen = getScreenByUUID(hs.spaces.spaceDisplay(space))
+        local user_spaces = filterList(screen and getScreenSpaces(screen) or {}, function(id)
+            return hs.spaces.spaceType(id) == "user"
+        end)
+        return rs.fallback_space == "first" and user_spaces[1] or user_spaces[#user_spaces]
+    end
+
+    -- Move a window to a space. Windows already there, and (from macOS 15 on)
+    -- windows inside full-screen/split-view spaces, are left alone; only
+    -- desktops are valid targets. If the move fails, the window goes to the
+    -- fallback space of the target screen, or else stays where it is (visible
+    -- console warning in both cases). Never uses `window:moveToScreen`, which
+    -- leaves windows assigned to the desktop they came from.
     -- Returns: true | nil, error message
     rs.moveWindowToSpace = function(window, space)
         if not space then
             return nil, "undefined target space"
         end
+        if hs.spaces.spaceType(space) ~= "user" then
+            return nil, "target is not a desktop (full-screen spaces are not supported yet)"
+        end
+        if isOnSpace(window, space) then
+            return true
+        end
+        local source = (hs.spaces.windowSpaces(window) or {})[1]
+        if not useNativeMove() and source and hs.spaces.spaceType(source) ~= "user" then
+            return nil, "window is in a full-screen space (not moved)"
+        end
         local status, err = moveWindow(window, space)
         if status then return true end
 
         local fallback = getFallbackSpace(space)
-        local screen = getScreenByUUID(hs.spaces.spaceDisplay(space))
-        local outcome = "window left in place"
-        if fallback and fallback ~= space and moveWindow(window, fallback) then
-            outcome = "moved to fallback space " .. fallback
-        elseif screen and window:screen() ~= screen then
-            window:moveToScreen(screen)
-            outcome = "moved to screen '" .. screen:name() .. "'"
-        end
+        local moved = fallback and fallback ~= space and moveWindow(window, fallback)
         print("(moveWindowToSpace) WARNING: window " .. window:id() .. " -> space "
-            .. tostring(space) .. " failed (" .. tostring(err) .. "): " .. outcome)
-        if outcome == "window left in place" then
+            .. tostring(space) .. " failed (" .. tostring(err) .. "): "
+            .. (moved and "moved to fallback space " .. fallback or "window left in place"))
+        if not moved then
             return nil, err
         end
         rs.fallback_count = rs.fallback_count + 1
@@ -817,20 +670,17 @@ function run(argv) {
         for _, screen in ipairs(hs.screen.allScreens()) do
             table.insert(screens, screen:name() .. " [" .. tostring(screen:fullFrame()) .. "]")
         end
+        local move = version.major <= 14 and "native" or rs.move_strategy
         return string.format(
-            "macOS %d.%d.%d, Hammerspoon %s, separate spaces: %s, move: %s, screens: %s",
+            "macOS %d.%d.%d, Hammerspoon %s, separate spaces: %s, same-screen move: %s, screens: %s",
             version.major, version.minor, version.patch, hs.processInfo.version,
-            tostring(hs.spaces.screensHaveSeparateSpaces()),
-            version.major <= 14 and "native" or "Mission Control",
-            table.concat(screens, "; ")
+            tostring(hs.spaces.screensHaveSeparateSpaces()), move, table.concat(screens, "; ")
         )
     end
 
     rs.logSystemInfo = function()
         rs.issueVerbose(rs.getSystemInfo(), rs.verbose)
     end
-
--- REPLACE in `spaces.lua`: dumpTree and rs.testSpaceControl
 
     -- Append an indented dump of an accessibility subtree to `lines`
     -- (at most `limit` children per node, default 40)
@@ -853,140 +703,166 @@ function run(argv) {
         end
     end
 
-    -- Diagnostic (takes 1-2 minutes; do not touch the mouse): clears the
-    -- console, reports permissions, tests goto, whether synthetic title-bar
-    -- drags are accepted (Hammerspoon events vs HID events), and every move
-    -- strategy on the same screen and on another screen, checking the result
-    -- against Mission Control and restoring the window after each one. Pass
-    -- `true` to also dump the Mission Control tree. Prints one report; window
-    -- titles appear in it, so redact before sharing.
+    -- Diagnostic (takes 1-3 minutes; do not touch the mouse): clears the
+    -- console, then with the first standard window (not Hammerspoon) that sits
+    -- on a desktop of a screen with 2+ desktops, tests goto, adding/removing a
+    -- desktop, each move strategy (title bar within the screen; Mission Control
+    -- within the screen and to another screen), putting the window back after
+    -- each one, and probes faster timings. Prints one framed report that ends
+    -- with recommended settings. Pass `true` to also dump the Mission Control
+    -- tree. Window titles appear in the report, so redact before sharing.
     rs.testSpaceControl = function(dump)
         hs.console.clearConsole()
-        local lines = {rs.getSystemInfo()}
+        print("restore_spaces diagnostic running: do not touch the mouse (1-3 minutes)...")
+        local lines, failures = {rs.getSystemInfo()}, 0
+        local verbose, speed, settle = rs.verbose, rs.move_speed, rs.mc_settle
+        rs.verbose = false
         local function report(text) table.insert(lines, text) end
+        local function section(level, title) report("\n" .. rs.banner(level, title)) end
         local function timed(label, action)
             local start = hs.timer.secondsSinceEpoch()
             local success, status, info = pcall(action)
             if not success then status, info = nil, status end
-            report(string.format("%-36s %s (%.2fs) %s", label, status and "OK" or "FAIL",
+            if not status then failures = failures + 1 end
+            report(string.format("%-38s %s (%.2fs) %s", label, status and "OK" or "FAIL",
                 hs.timer.secondsSinceEpoch() - start, tostring(info or "")))
             return status
         end
-        -- A user space of the screen other than its active one, and the active one
+        local function getDesktops(screen)
+            return rs.validateSpaces(hs.spaces.spacesForScreen(screen:id()) or {})
+        end
+        -- A desktop of the screen other than its active one, and the active one
         local function getOtherSpace(screen)
             local active = hs.spaces.activeSpaceOnScreen(screen)
-            for _, id in ipairs(hs.spaces.spacesForScreen(screen:id()) or {}) do
-                if id ~= active and hs.spaces.spaceType(id) == "user" then
+            for _, id in ipairs(getDesktops(screen)) do
+                if id ~= active then
                     return id, active
                 end
             end
         end
-
-        local tap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function() end)
-        tap:start()
-        report(string.format("accessibility: %s, event tap enabled: %s",
-            tostring(hs.accessibilityState()), tostring(tap:isEnabled())))
-        tap:stop()
-
-        local window, other, active
-        for _, candidate in ipairs(hs.window.orderedWindows()) do
-            if candidate:isStandard() and candidate:application():name() ~= "Hammerspoon" then
-                other, active = getOtherSpace(candidate:screen())
-                if other then
-                    window = candidate
-                    break
-                end
-            end
+        -- Window location by space, by the screen owning that space and by frame
+        local function where(window)
+            return string.format("spaces %s, space of '%s', frame on '%s'",
+                hs.inspect(hs.spaces.windowSpaces(window) or {}, {newline = "", indent = ""}),
+                getWindowScreen(window):name(), window:screen():name())
         end
 
-        if window then
+        local function run()
+            report("accessibility: " .. tostring(hs.accessibilityState()))
+            local window, other, active
+            for _, candidate in ipairs(hs.window.orderedWindows()) do
+                if candidate:isStandard() and candidate:application():name() ~= "Hammerspoon" then
+                    other, active = getOtherSpace(candidate:screen())
+                    if other and isOnSpace(candidate, active) then
+                        window = candidate
+                        break
+                    end
+                end
+            end
+            if not window then
+                report("SKIPPED tests: no standard window on a desktop of a screen with 2+ desktops")
+                return
+            end
             local home, frame = window:screen(), window:frame()
-            local function where() return describeLocation(locate(window)) end
-            local function restore()
+            -- Bring the window back to its starting space and size
+            local function recover()
+                if not isOnSpace(window, active) then
+                    rs.gotoSpace((hs.spaces.windowSpaces(window) or {})[1] or active)
+                    timed("  recover (all strategies)", function() return moveWindow(window, active) end)
+                end
                 rs.gotoSpace(active)
-                if window:screen() ~= home then window:moveToScreen(home, true, true) end
                 window:setFrame(frame)
             end
-            local function dragProbe(label, perform)
-                timed(label, function()
-                    local before = window:frame()
-                    local grab = getGrabPoint(window)
-                    local cursor = hs.mouse.absolutePosition()
-                    local status, err = perform(grab, {x = grab.x + 100, y = grab.y})
-                    rs.delayExecution(rs.mc_settle)
-                    local moved = window:frame().x - before.x
-                    window:setFrame(before)
-                    hs.mouse.absolutePosition(cursor)
-                    return moved > 50, string.format("window moved by %.0f px %s",
-                        moved, status and "" or tostring(err))
-                end)
-            end
-            -- Move out, follow the window, move back; always restore afterwards
-            local function roundTrip(label, mover, to)
-                local moved = timed(label .. " out", function() return mover(window, to) end)
-                report("    now: " .. where())
-                if moved then
+            -- Move out, follow the window, move back; always recover afterwards
+            local function roundTrip(label, name, to)
+                if not isOnSpace(window, active) then
+                    report(label .. ": SKIPPED, window is not at its start (" .. where(window) .. ")")
+                    return
+                end
+                local mover = movers[name]
+                if timed(label .. " out", function() return mover(window, to) end) then
                     timed("  goto moved window", function() return rs.gotoSpace(to) end)
                     timed(label .. " back", function() return mover(window, active) end)
-                    report("    now: " .. where())
                 end
-                restore()
+                report("    now: " .. where(window))
+                recover()
             end
 
-            report("window of '" .. window:application():name() .. "' on '" .. home:name()
-                .. "', active space " .. active .. ", test space " .. other)
-            report("  start: " .. where())
+            report("window of '" .. window:application():name() .. "', " .. where(window)
+                .. ", test space " .. other)
+
+            section(3, "switching desktops")
             timed("goto other", function() return rs.gotoSpace(other) end)
             timed("goto back", function() return rs.gotoSpace(active) end)
 
-            window:focus()
-            rs.delayExecution(rs.mc_settle)
-            report("synthetic title-bar drag of 100 px:")
-            dragProbe("  Hammerspoon events", function(from, to)
-                drag_counter = drag_counter + 1
-                local number = drag_counter
-                hs.mouse.absolutePosition(from)
-                postMouse("mouseMoved", from, from, number)
-                rs.delayExecution(rs.mc_settle)
-                postMouse("leftMouseDown", from, from, number)
-                rs.delayExecution(rs.mc_pause)
-                local last = glide(from, to, number)
-                postMouse("leftMouseUp", last, last, number)
-                return true
-            end)
-            dragProbe("  HID events (JXA)", function(from, to)
-                return postGesture(buildGesture(from, to, 0, 1))
-            end)
-
-            local strategies = {
-                {"HID gesture", moveWindowViaHID},
-                {"screens", moveWindowViaScreens},
-                {"Mission Control drag", moveWindowViaMC},
-                {"title bar (HS events)", moveWindowViaTitlebar}
-            }
-            for _, strategy in ipairs(strategies) do
-                roundTrip(strategy[1] .. " / same screen", strategy[2], other)
+            section(3, "adding and removing a desktop")
+            local before = getDesktops(home)
+            if #before < 16 then
+                local added
+                timed("add desktop", function()
+                    local status, err = rs.addSpaceToScreen(home)
+                    for _, id in ipairs(getDesktops(home)) do
+                        if not rs.contains(before, id) then added = id end
+                    end
+                    return status and added, err or ("new desktop " .. tostring(added))
+                end)
+                if added then
+                    timed("remove desktop", function()
+                        local status, err = rs.removeSpace(added)
+                        return status and not rs.contains(getDesktops(home), added), err
+                    end)
+                end
+            else
+                report("SKIPPED: the screen already has 16 desktops")
             end
+
+            section(3, "moving the window within its screen")
+            for _, name in ipairs({"titlebar", "mission_control"}) do
+                roundTrip(name .. " / same screen", name, other)
+            end
+
+            section(3, "moving the window to another screen (mission_control only)")
             for _, screen in ipairs(hs.screen.allScreens()) do
                 local away = hs.spaces.activeSpaceOnScreen(screen)
                 if screen ~= home and hs.spaces.spaceType(away) == "user" then
                     report("other screen: '" .. screen:name() .. "', space " .. away)
-                    for _, strategy in ipairs(strategies) do
-                        roundTrip(strategy[1] .. " / other screen", strategy[2], away)
-                    end
+                    roundTrip("mission_control / other screen", "mission_control", away)
                     break
                 end
             end
-            report("end: " .. where())
-        else
-            report("SKIPPED tests: no standard window on a screen with 2+ user spaces")
+
+            section(3, "faster timings (mission_control, same screen)")
+            local best
+            for _, probe in ipairs({{2, 0.2}, {4, 0.12}, {8, 0.08}}) do
+                rs.move_speed, rs.mc_settle = probe[1], probe[2]
+                local passed = timed(string.format("move_speed %d, mc_settle %.2f", probe[1], probe[2]), function()
+                    local status, err = moveWindowViaMC(window, other)
+                    if not status then return nil, err end
+                    rs.gotoSpace(other)
+                    return moveWindowViaMC(window, active)
+                end)
+                recover()
+                if not passed then break end
+                best = probe
+            end
+            rs.move_speed, rs.mc_settle = speed, settle
+            report("\nend: " .. where(window))
+
+            section(3, "recommended settings")
+            if best then
+                report("fastest probe that passed (use a slower one if apply is flaky):")
+                report(string.format("  hs.restore_spaces.move_speed = %d", best[1]))
+                report(string.format("  hs.restore_spaces.mc_settle = %.2f", best[2]))
+            else
+                report("keep the defaults (no faster probe passed)")
+            end
         end
 
-        if dump then
+        local function dumpTrees()
             hs.spaces.openMissionControl()
-            local mc = waitUntil(getMissionControl)
+            waitUntil(getMissionControl)
             for _, bundle in ipairs(mc_hosts) do
-                report("Mission Control tree under " .. bundle .. ":")
+                section(4, "Mission Control tree under " .. bundle)
                 local app = hs.application.applicationsForBundleID(bundle)[1]
                 if app then
                     dumpTree(hs.axuielement.applicationElement(app), 0, lines)
@@ -997,7 +873,16 @@ function run(argv) {
             closeMC()
         end
 
-        print("---- restore_spaces diagnostic ----\n" .. table.concat(lines, "\n"))
+        local success, err = pcall(run)
+        if not success then
+            failures = failures + 1
+            report("ERROR: " .. tostring(err))
+        end
+        rs.move_speed, rs.mc_settle = speed, settle
+        if dump then pcall(dumpTrees) end
+        rs.verbose = verbose
+        print("\n" .. rs.banner(1, "restore_spaces diagnostic") .. "\n" .. table.concat(lines, "\n")
+            .. "\n" .. rs.banner(1, string.format("end of diagnostic: %d failed steps", failures)))
     end
 
 end

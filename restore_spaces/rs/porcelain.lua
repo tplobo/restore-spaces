@@ -4,17 +4,21 @@
 return function(rs,hs)
 
     rs.saveEnvironmentState = function()
-        rs.logSystemInfo()
-        rs.processPlistConfig("create")
-        rs.getEnvironmentState()
-        rs.processPlistConfig("destroy")
+        rs.runWithBanner("save environment state", function()
+            rs.logSystemInfo()
+            rs.processPlistConfig("create")
+            rs.getEnvironmentState()
+            rs.processPlistConfig("destroy")
+        end)
     end
 
     rs.applyEnvironmentState = function()
-        rs.logSystemInfo()
-        rs.processPlistConfig("create")
-        rs.setEnvironmentState()
-        rs.processPlistConfig("destroy")
+        rs.runWithBanner("apply environment state", function()
+            rs.logSystemInfo()
+            rs.processPlistConfig("create")
+            rs.setEnvironmentState()
+            rs.processPlistConfig("destroy")
+        end)
     end
 
     --[[

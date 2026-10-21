@@ -5,7 +5,7 @@ hs.hotkey = require "hs.hotkey"
 hs.restore_spaces = require 'hs.restore_spaces.restore_spaces'
 
 -- Configure 'restore_spaces'
-hs.restore_spaces.verbose = false
+hs.restore_spaces.verbose = true
 hs.restore_spaces.space_pause = 0.3
 hs.restore_spaces.screen_pause = 0.4
 

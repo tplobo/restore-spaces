@@ -1,6 +1,5 @@
--- `restore_spaces.lua`
+-- `restore_spaces.lua` 
 
--- Import Hammerspoon modules
 --hs.chooser = require 'hs.chooser'
 hs.application = require 'hs.application'
 hs.axuielement = require 'hs.axuielement'
@@ -29,6 +28,7 @@ local rs = {}
 -- Global variables (defaults)
 --mod.mode = "quiet" -- "quiet" or "verbose"
 rs.verbose = false
+rs.banner_width = 72 -- in characters, of the console banners
 rs.space_pause = 0.3 -- in seconds (<0.3 breaks the spaces module)
 rs.screen_pause = 0.4 -- in seconds (<0.4 breaks the spaces module)
 rs.multitab_pause = 0.01 -- in seconds (=0 breaks tab lists comparison)
@@ -39,7 +39,16 @@ rs.multitab_comparison = {
 }
 rs.multitab_apps = {"Google Chrome", "Firefox", "Safari"}
 rs.config_path = "scp/scp_config"
-rs.fallback_space = "first" -- "first" or "last" desktop of the target screen
+rs.use_plist_check = false -- also check desktops against com.apple.spaces.plist
+rs.move_strategy = "titlebar" -- same-screen moves (macOS 15+): "titlebar" or "mission_control"
+                              -- (moves between screens always use "mission_control")
+rs.move_max_hops = 3 -- spaces per move that "titlebar" may cross (slow: ~0.5 s each)
+rs.move_speed = 1 -- drag speed of all moves (1 = default; 2 = half the steps; lower it if windows stop following)
+rs.move_apps = {                        -- apps that must use one strategy only
+    titlebar = {},                      -- _e.g._ {"Terminal"}
+    mission_control = {}                -- _e.g._ apps without a usable title bar
+}
+rs.fallback_space = "last" -- "first" or "last" desktop of the target screen
 rs.mc_timeout = 2.0 -- in seconds, to wait for Mission Control (macOS 15+)
 rs.mc_pause = 0.05 -- in seconds, polling interval for Mission Control
 rs.mc_settle = 0.3 -- in seconds, to let Mission Control animations settle
