@@ -343,9 +343,14 @@ of the macOS 15+ work, except where noted. Ordered by severity.
 1. **New code (macOS 15+) to double check when tested.** The `AXRemoveDesktop`
    action and the fallback to the thumbnail's child buttons are based on third
    party reports; the drop point on `WindowManager` thumbnails uses `AXPosition`
-   as reported in the PaperWM.spoon PR; the starting mouse event number (32000) is
-   a guess; "Displays have separate Spaces" turned off is not handled by
+   as reported in the PaperWM.spoon PR; the starting mouse event number (32000)
+   is a guess; "Displays have separate Spaces" turned off is not handled by
    `findDisplay` beyond the single-display case.
+
+1. **Renaming.** The package should incorporate better names for its elements
+   and functions; e.g. "environment" should be renamed to "profile". All other
+   words in the package should be revised to ensure comprehension and an elegant
+   implementation.
 
 ## Known issues
 
