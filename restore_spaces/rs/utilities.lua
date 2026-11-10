@@ -11,8 +11,50 @@ return function(rs,hs)
         return string.format("%03d", int)
     end
 
+    -- Public save/apply/diagnostic operations run serially in a coroutine so
+    -- waiting for WindowServer does not block Hammerspoon's main run loop.
+    local operation
+    rs.runOperation = function(name, action, cleanup)
+        if operation then
+            return nil, "another restore-spaces operation is running"
+        end
+        local current = {thread = coroutine.create(action)}
+        operation = current
+        local function finish(err)
+            if cleanup then
+                local ok, cleanup_err = pcall(cleanup)
+                if not ok then
+                    err = tostring(err or "") .. " cleanup: " .. tostring(cleanup_err)
+                end
+            end
+            operation = nil
+            if err then print("(" .. name .. ") " .. tostring(err)) end
+        end
+        local resume
+        resume = function()
+            current.timer = nil
+            local ok, delay = coroutine.resume(current.thread)
+            if not ok then
+                finish(debug.traceback(current.thread, tostring(delay)))
+            elseif coroutine.status(current.thread) == "dead" then
+                finish()
+            elseif type(delay) ~= "number" or delay < 0 then
+                finish("invalid wait interval")
+            else
+                current.timer = hs.timer.doAfter(delay, resume)
+            end
+        end
+        resume()
+        return true
+    end
+
     rs.delayExecution = function(delay)
-        hs.timer.usleep(1e6 * delay)
+        if operation and coroutine.running() == operation.thread then
+            coroutine.yield(delay)
+        else
+            -- Preserve synchronous use of the lower-level functions.
+            hs.timer.usleep(1e6 * delay)
+        end
     end
 
     rs.contains = function(tbl, val)

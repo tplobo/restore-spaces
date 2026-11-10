@@ -20,6 +20,8 @@ return function(rs,hs)
             text = "Windows applied!"
         elseif case == "fallback" then
             text = "Some windows were moved to fallback locations!"
+        elseif case == "failed" then
+            text = tostring(rs.failed_count) .. " window(s) could not be restored!"
         elseif case == "environment" then
             text = "Environment undefined!"
         else
@@ -223,10 +225,11 @@ return function(rs,hs)
         -- Move to target space (falls back to another desktop/screen if needed)
         local status, err_msg = rs.moveWindowToSpace(window, target_space)
 
-        rs.setFrameState(window, frame_state, fullscreen_state)
         if status then
+            rs.setFrameState(window, frame_state, fullscreen_state)
             rs.issueVerbose("set window " .. window:id(), rs.verbose)
         else
+            rs.failed_count = (rs.failed_count or 0) + 1
             rs.issueVerbose("failed to set window " .. window:id(), rs.verbose)
             msg = "moveWindowToSpace status (" .. tostring(status)
             msg = msg .. "): " .. tostring(err_msg)

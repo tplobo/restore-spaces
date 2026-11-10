@@ -22,13 +22,13 @@ spaces on MacOS.
 already including the [spaces module](https://github.com/asmagill/hs._asm.spaces)
 in its latest version.
 
-> ⚠️ **Note:** From macOS 15 on, the native `hs.spaces` functions that move
-> windows (and, from macOS 26/27 on, those that switch, add and remove
-> spaces) do not work
+> ⚠️ **Note:** Native `hs.spaces` window movement can silently fail on
+> recent macOS versions. Switching, adding and removing spaces may also fail
+> when the Mission Control accessibility tree changes
 > ([#3698](https://github.com/Hammerspoon/hammerspoon/issues/3698),
 > [#3897](https://github.com/Hammerspoon/hammerspoon/issues/3897)). This
-> module detects the macOS version and replaces them with its own
-> implementation (_vide_ **Moving windows on macOS 15+** below). It needs
+> module verifies native window moves and can fall back to Mission Control
+> (_vide_ **Moving windows on macOS 15+** below). It needs
 > Hammerspoon 1.1.1 or above, with Accessibility permission enabled.
 
 <br>
@@ -107,23 +107,45 @@ modules.
 
 ## Moving windows on macOS 15+
 
-Up to macOS 14, the native `hs.spaces` functions are used. From macOS 15 on,
-`hs.spaces.moveWindowToSpace` returns `true` without moving anything, and from
-macOS 26/27 on the Mission Control accessibility tree moved from the Dock to
-the `WindowManager` process, which also breaks `gotoSpace`, `addSpaceToScreen`
-and `removeSpace`. The module therefore tries the native function first
-(except for moving) and otherwise drives Mission Control itself:
+The module tries `hs.spaces.moveWindowToSpace` on every macOS version, then
+checks `hs.spaces.windowSpaces` until the window actually reaches the target
+or `rs.native_move_timeout` expires (default: 2 seconds). A `true` return value
+alone is not treated as proof of movement. Already-correct windows are left
+alone. Size/fullscreen restoration follows only a successful move.
+
+This does not fix the underlying native implementation in stock Hammerspoon.
+In particular, Hammerspoon 1.1.1 still uses the older movement path on Tahoe.
+[Hammerspoon PR #3889](https://github.com/Hammerspoon/hammerspoon/pull/3889)
+adds a newer asynchronous WindowServer operation; it is not yet in a release.
+This module can use that fix when available instead of selecting the movement
+strategy solely from the macOS major version.
+
+If a native move fails, the existing Mission Control fallback remains enabled
+by default. To require native movement and leave failures in place:
+
+```lua
+hs.restore_spaces.allow_mission_control_fallback = false
+hs.restore_spaces.native_move_timeout = 2.0
+```
+
+With fallback disabled, a failed move is reported and its window is neither
+resized nor sent to an alternate desktop. This setting controls window moves;
+the existing save/apply enumeration still switches through Spaces, and the
+diagnostic still opens Mission Control to inspect its tree.
+
+The fallback handles changes in the Mission Control accessibility tree:
 
 - **Switch/add/remove spaces:** presses the desktop thumbnails (or the add
   button) through the accessibility API.
-- **Move windows:** drags the window thumbnail onto the target desktop
+- **Move windows, when enabled:** drags the window thumbnail onto the target desktop
   thumbnail with a timed, multi-step synthetic drag (single jumps are ignored by
   recent macOS versions), and verifies that the window actually arrived.
 
 Consequences and limitations:
 
-- Mission Control visibly opens and closes for each operation, so `apply` is
-  slower than on macOS 14. The cursor is moved temporarily and restored.
+- Successful native window moves do not open Mission Control or move the cursor.
+- When a fallback is needed, Mission Control visibly opens and closes and the
+  cursor is moved temporarily and restored.
 - The window must be visible on the active space of its screen (guaranteed by
   the way `apply` cycles through spaces).
 - Windows are identified in Mission Control by title. Windows with identical
@@ -135,11 +157,37 @@ Consequences and limitations:
   too, it is moved to the target monitor itself. A warning is printed to the
   console for each such window and a notification is shown at the end of
   `apply`.
-- Status: macOS 14 uses the previous (verified) code path. The other paths are
-  **untested** at the time of writing: macOS 15 and 26 have not been verified
-  by anyone, and macOS 27.0 has only been verified by third parties for the
-  approach in general. Timings can be tuned with `rs.mc_timeout`,
-  `rs.mc_pause`, `rs.mc_settle`, `rs.mc_drag_steps` and `rs.mc_drag_pause`.
+- Native validation: normal Safari and Finder windows were moved to another
+  user Space and back on Apple Silicon, macOS 26.6.2 (25G83), with SIP enabled.
+  This used the unchanged `libspaces.m` from Hammerspoon PR #3889, compiled as
+  an isolated extension in a Hammerspoon 1.1.0 host. Target membership and
+  rollback were verified, the active Space stayed unchanged, and no Mission
+  Control fallback ran. The full PR also passed an unsigned Xcode Debug build.
+- This is not an end-to-end test of every saved environment. macOS 15/27,
+  multiple displays, full-screen/Split View and the Mission Control fallback
+  remain unverified by these tests. Fallback timings can be tuned with
+  `rs.mc_timeout`, `rs.mc_pause`, `rs.mc_settle`, `rs.mc_drag_steps` and
+  `rs.mc_drag_pause`.
+
+Save, apply and the diagnostic now run as serialized coroutine operations.
+Their delays yield through `hs.timer.doAfter`, so asynchronous native moves can
+finish while Hammerspoon continues processing events. These entry points return
+`true` when started, or `nil, error` if another operation is already running.
+The usual completion notification is emitted only when processing finishes;
+failed window moves get a failure notification rather than "Windows applied!".
+Direct calls to lower-level helpers retain their synchronous behavior.
+
+### Tests
+
+Run the regression tests from the repository root with Lua 5.4:
+
+```sh
+lua tests/native_moves.lua
+```
+
+The tests use simulated timers and windows, without macOS access. They cover
+asynchronous arrival, native no-ops, errors, timeouts, window disappearance,
+fallback selection, non-overlapping operations, cleanup, and frame ordering.
 
 ### Acknowledgements
 
