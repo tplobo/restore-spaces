@@ -141,21 +141,33 @@ end getModifierFromString
 --######################################################################--
 -- GET ALL TABS OF A SINGLE WINDOW
 --######################################################################--
+-- Logs "CYCLE|<first title>|<key presses>|<why it stopped>|<tabs found>" (read by
+-- Hammerspoon). Stop reasons: loop (back at the first tab), stagnant (no new title
+-- for `maxStagnantTabs` tabs), identical (the same title `maxIdenticalConsecutives`
+-- times in a row), max (`maxTabs` key presses). Unless it looped, the tab that was
+-- selected at the start is selected again at the end by pressing the opposite key
+-- as many times as the key was pressed.
 on getWindowTabs(appName, Config)
 	
 	-- Initialization
 	set tabList to {}
 	set counter to 0
+	set pressCount to 0
 	set tabBuffer to {}
 	set firstTabs to {}
 	set counterIdenticalConsecutives to 0
+	set seenTitles to {}
+	set stagnantCounter to 0
+	set stopReason to "max"
+	set stagnantLimit to 25
+	try
+		set stagnantLimit to maxStagnantTabs of Config
+	end try
 	
 	-- Define key combinations to jump to right and left tabs
 	set keyCombinations to getAppTabJumpKeys(appName, Config)
 	set rightTabKeys to item 1 of keyCombinations
 	set leftTabKeys to item 2 of keyCombinations
-	
-	set pruneFlag to false
 	
 	tell application appName
 		
@@ -166,74 +178,84 @@ on getWindowTabs(appName, Config)
 		copy firstTitle to the end of the tabList
 		copy firstTitle to the end of the tabBuffer
 		copy firstTitle to the end of the firstTabs
+		copy firstTitle to the end of the seenTitles
 		
 		set keyCode to item 1 of rightTabKeys
-		set keyList to item 2 of rightTabKeys
-		set keyModifiers to my getModifierFromString(keyList)
+		set keyModifiers to my getModifierFromString(item 2 of rightTabKeys)
 		repeat until (counter > maxTabs of Config)
 			tell application "System Events" to key code keyCode using (items of keyModifiers)
 			delay tabDelay of Config
+			set pressCount to pressCount + 1
 			set currentTitle to name of front window
-			
-			-- Copy URL instead:
-			--tell application "System Events" to keystroke "l" using command down
-			--tell application "System Events" to keystroke "c" using command down
-			--copy (the clipboard) to the end of the |tabList|
 			
 			-- Add the current tab to the buffer
 			if (length of tabBuffer) is equal to (bufferSize of Config) then
 				-- Remove the oldest entry from the buffer
 				set tabBuffer to items 2 through -1 of tabBuffer
 			end if
-			copy currentTitle to the end of the tabBuffer
+			copy currentTitle to the end of tabBuffer
 			
 			-- Check for identical consecutive tabs
 			if (currentTitle is equal to item -1 of tabList) then
 				set counterIdenticalConsecutives to counterIdenticalConsecutives + 1
 				if (counterIdenticalConsecutives is equal to maxIdenticalConsecutives of Config) then
+					set stopReason to "identical"
 					exit repeat
 				end if
 			else
-				set identicalTabCounter to 0
+				set counterIdenticalConsecutives to 0
 			end if
 			
 			-- Check if we have looped back to the first tab
 			if (length of firstTabs) is less than (bufferSize of Config) then
-				copy currentTitle to the end of the firstTabs
+				copy currentTitle to the end of firstTabs
 			else if (tabBuffer is equal to firstTabs) then
-				set pruneFlag to true
+				set stopReason to "loop"
 				exit repeat
 			end if
 			
-			copy currentTitle to the end of the tabList
+			-- Check whether the list stopped growing: titles that change between laps
+			-- (_e.g._ tabs that load when they are selected) make the check above fail.
+			-- Stop when no new title appeared for `maxStagnantTabs` tabs, and only
+			-- after at least two laps' worth of presses.
+			if currentTitle is in seenTitles then
+				set stagnantCounter to stagnantCounter + 1
+			else
+				set stagnantCounter to 0
+				copy currentTitle to the end of seenTitles
+			end if
+			if (stagnantCounter is greater than or equal to stagnantLimit) and (counter is greater than or equal to (2 * (length of seenTitles) + stagnantLimit)) then
+				set stopReason to "stagnant"
+				exit repeat
+			end if
+			
+			copy currentTitle to the end of the |tabList|
 			set counter to counter + 1
 		end repeat
 		
-		if pruneFlag is true then
+		-- Go back to the tab that was selected at the start
+		set keyCode to item 1 of leftTabKeys
+		set keyModifiers to my getModifierFromString(item 2 of leftTabKeys)
+		if stopReason is "loop" then
+			-- Remove the first (bufferSize - 1) entries from the end of tabList and
+			-- go back (bufferSize - 1) tabs to the left
 			set tabListLength to length of tabList
-			set pruneCount to ((bufferSize of Config) - 1)
-			
-			-- Remove the first (bufferSize - 1) entries from the end of tabList
-			set checkGreater to (tabListLength > (bufferSize of Config))
-			set checkEqual to (tabListLength is equal to (bufferSize of Config))
-			if checkGreater or checkEqual then
-				set tabList to items 1 through (tabListLength - pruneCount) of tabList
+			set backCount to ((bufferSize of Config) - 1)
+			if tabListLength is greater than or equal to (bufferSize of Config) then
+				set tabList to items 1 through (tabListLength - backCount) of tabList
 			end if
-			
-			-- Go back (bufferSize - 1) tabs to the left
-			set keyCode to item 1 of leftTabKeys
-			set keyList to item 2 of leftTabKeys
-			set keyModifiers to my getModifierFromString(keyList)
-			repeat pruneCount times
-				tell application "System Events" to key code keyCode using (items of keyModifiers)
-				delay tabDelay of Config
-			end repeat
+		else
+			set backCount to pressCount
+			if stopReason is "stagnant" then set tabList to seenTitles
 		end if
+		repeat backCount times
+			tell application "System Events" to key code keyCode using (items of keyModifiers)
+			delay tabDelay of Config
+		end repeat
 		
 	end tell
 	
-	log length of tabList
-	log tabList
+	log "CYCLE|" & firstTitle & "|" & pressCount & "|" & stopReason & "|" & (length of tabList)
 	
 	-- Build delimited string with list of tab titles
 	set tabsString to ""
@@ -247,7 +269,6 @@ on getWindowTabs(appName, Config)
 			set tabsString to tabsString & currentString
 		end if
 	end repeat
-	log tabsString
 	
 	return tabsString
 	

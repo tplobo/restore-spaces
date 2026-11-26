@@ -3,21 +3,56 @@
 -- Initialize porcelain
 return function(rs,hs)
 
+    -- Run `action` and always remove the plist of the configuration afterwards
+    local function withPlistConfig(action)
+        rs.processPlistConfig("create")
+        local success, err = xpcall(action, debug.traceback)
+        pcall(rs.processPlistConfig, "destroy")
+        if not success then error(err, 0) end
+    end
+
     rs.saveEnvironmentState = function()
-        rs.runWithBanner("save environment state", function()
+        rs.runAction("save environment state", function()
             rs.logSystemInfo()
-            rs.processPlistConfig("create")
-            rs.getEnvironmentState()
-            rs.processPlistConfig("destroy")
+            withPlistConfig(rs.getEnvironmentState)
         end)
     end
 
     rs.applyEnvironmentState = function()
-        rs.runWithBanner("apply environment state", function()
+        rs.runAction("apply environment state", function()
             rs.logSystemInfo()
-            rs.processPlistConfig("create")
-            rs.setEnvironmentState()
-            rs.processPlistConfig("destroy")
+            withPlistConfig(rs.setEnvironmentState)
+        end)
+    end
+
+    -- `apply` with the detailed record of the placement check
+    -- (tmp/data_check.json), for debugging
+    rs.applyAndCheck = function()
+        local previous = rs.debug_check
+        rs.debug_check = true
+        local success, err = pcall(rs.applyEnvironmentState)
+        rs.debug_check = previous
+        if not success then error(err, 0) end
+    end
+
+    -- Bring the windows into view (`rs.min_window_visibility`, see
+    -- `rs.realignWindow`): cycles through all desktops of all screens like
+    -- `save`, but records and changes nothing else
+    rs.realignWindows = function()
+        rs.runAction("realign windows", function()
+            if not hs.spaces.screensHaveSeparateSpaces() then
+                error("'Displays have separate Spaces' must be on")
+            end
+            rs.logSystemInfo()
+            for _, screen in ipairs(rs.getSortedScreens()) do
+                rs.visitSpaces(screen, function(space)
+                    for _, window in ipairs(hs.window.visibleWindows()) do
+                        if rs.realignWindow(window, space) then
+                            rs.countStat(screen, "windows")
+                        end
+                    end
+                end, true)
+            end
         end)
     end
 
@@ -26,89 +61,70 @@ return function(rs,hs)
     end
     --]]
 
+    -- Save the windows of every space (desktops and full-screen spaces) of every
+    -- monitor, where each one is: `screen_index`, `space_kind`, `slot` (position
+    -- among the spaces of the monitor) and `anchor` (desktops up to its space)
     rs.getEnvironmentState = function()
-        local save_new_env = true
-        local env_name = rs.processEnvironment(save_new_env)
+        local env_name = rs.processEnvironment(true)
         if not env_name then
             error("Undefined environment name!")
         end
-        local env_state = {}
+        rs.stats.environment = env_name
+        local env_state, boot = {}, rs.getBootTime()
 
-        local all_screens = rs.retrieveEnvironmentEntities("screens",nil)
-        for _, screen in ipairs(all_screens) do
-            local screen_id = tostring(screen:id())
-
-            local initial_space = hs.spaces.activeSpaceOnScreen(screen)
-            local screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
-
-            rs.delayExecution(rs.screen_pause)
-            for _, space in pairs(screen_spaces) do
-                rs.issueVerbose(
-                    "go to space: " .. space .. " on screen: " .. screen_id,
-                    rs.verbose
-                )
-                rs.gotoSpace(space)
-                rs.delayExecution(rs.space_pause)
-
-                local space_state = {}
-                local space_windows = rs.retrieveEnvironmentEntities("windows", screen)
-                local multitab_windows = rs.list2table(rs.multitab_apps)
-                for _, window in ipairs(space_windows) do
-                    local window_state, window_id = rs.getWindowState(window)
-                    window_state["screen"] = tonumber(screen_id)
-                    window_state["space"] = space
-                    if window_state["title"] == "" then
-                        local msg = "ignored (no title): "
-                        msg = msg .. "\tapp (" .. window_state["app"] .. ")"
-                        msg =  msg .. "\twindow id (" .. window_id .. ")"
-                        rs.issueVerbose(msg,rs.verbose)
-                    else
-                        rs.issueVerbose(hs.inspect(window_state),rs.verbose)
-                        if window_state["multitab"] == true then
-                            local app = window_state["app"]
-                            local id_list = multitab_windows[app]
-                            id_list[#id_list + 1] = window_id
-                            multitab_windows[app] = id_list
+        for screen_i, screen in ipairs(rs.getSortedScreens()) do
+            local screen_index = rs.paddedToStr(screen_i)
+            rs.visitSpaces(screen, function(space, item)
+                -- Keep each window in view before recording it (a no-op unless
+                -- `rs.min_window_visibility` > 0)
+                local infos = rs.getSpaceWindows(screen, function(window)
+                    rs.realignWindow(window, space)
+                end)
+                local tabs = rs.readSpaceTabs(screen, space, infos)
+                for _, info in ipairs(infos) do
+                    local state = info.state
+                    -- A window of all desktops also shows up in full-screen spaces:
+                    -- only the windows that belong to this space are recorded there
+                    local windows_spaces = hs.spaces.windowSpaces(info.window) or {}
+                    if item.kind == "desktop" or (#windows_spaces == 1 and windows_spaces[1] == space) then
+                        state["screen"], state["space"], state["boot"] = screen:id(), space, boot
+                        state["screen_index"], state["space_kind"] = screen_index, item.kind
+                        state["slot"], state["anchor"] = item.slot, item.anchor
+                        if state["multitab"] then
+                            state["tabs"] = tabs[info.id]
                         end
-                        space_state[window_id] = window_state
+                        rs.issueVerbose(rs.describeState(state), rs.verbose)
+                        env_state[info.id] = state
                     end
                 end
-                -- refineSpaceState:
-                for app, id_list in pairs(multitab_windows) do
-                    if #id_list > 0 then
-                        local id2title = {}
-                        for _, window_id in ipairs(id_list) do
-                            local window_state = space_state[window_id]
-                            id2title[window_id] = window_state["title"]
-                        end
-                        local app_tabs = rs.getAppTabsInSpace(app,id2title)
-                        for window_id, _ in pairs(id2title) do
-                            local window_state = space_state[window_id]
-                            window_state["tabs"] = app_tabs[window_id]
-                            space_state[window_id] = window_state
-                        end
-                    end
-                end
-                
-                for window_id, window_state in pairs(space_state) do
-                    env_state[window_id] = window_state
-                end
-
-            end
-            rs.gotoSpace(initial_space)
+            end)
         end
+
+        -- Read the saved windows of the other environments first, or they are lost
+        rs.data_wins = rs.processDataInFile("read","windows") or {}
         rs.data_wins[env_name] = env_state
         rs.data_wins = rs.processDataInFile("write","windows")
+        if rs.restore_scan then
+            local success, err = pcall(rs.measure, "display scan", rs.recordScan, env_name)
+            if not success then
+                rs.warn("the scan of the monitors could not be recorded: " .. tostring(err), "scan")
+            end
+        end
         rs.notifyUser("save")
     end
 
+    -- Recognize the open windows of every space and put them where they were
+    -- saved: desktop windows are moved while visiting, and the windows saved in
+    -- full-screen spaces enter full screen afterwards, in order
     rs.setEnvironmentState = function()
-        local save_new_env = false
-        local env_name, env = rs.processEnvironment(save_new_env)
+        local env_name, env = rs.processEnvironment(false)
         if not env_name then
             error("Undefined environment name!")
         end
+        rs.stats.environment = env_name
         rs.fallback_count = 0
+        rs.failed_count = 0
+        rs.native_failed = false
 
         --TODO: open apps if they are not open?
         --TODO: close apps if they are not saved?
@@ -117,130 +133,96 @@ return function(rs,hs)
         if not rs.data_wins[env_name] then
             error("State for environment has never been saved!")
         end
-        local env_state = rs.data_wins[env_name]
-
-        local all_screens = rs.retrieveEnvironmentEntities("screens",nil)
-
-        -- TODO: Build all_space_maps by looping thorugh all screens, and
-        -- change the input of rs.setWindowState to all_space_maps instead
-        -- of space_map. This will ensure windows can get relocated to
-        -- different spaces on different screens.
+        local saved = rs.loadSavedWindows(rs.data_wins[env_name])
+        local screens = rs.getSortedScreens()
 
         -- Build all_maps with all space maps to ensure windows can be
         -- relocated to spaces on different screens.
-        local all_maps = {}
-        for screen_i, _ in ipairs(all_screens) do
+        local all_maps, initial = {}, {}
+        for screen_i, screen in ipairs(screens) do
             local screen_index = rs.paddedToStr(screen_i)
             all_maps[screen_index] = env[screen_index]["space_map"]
+            initial[screen] = hs.spaces.activeSpaceOnScreen(screen)
         end
-        --print("all_maps: " .. hs.inspect(all_maps))
 
-        for screen_i, screen in ipairs(all_screens) do
-            local screen_id = tostring(screen:id())
-            local screen_index = rs.paddedToStr(screen_i)
-            --local space_map = env[screen_index]["space_map"]
+        -- Windows already placed in this run: when they show up again (on the
+        -- desktop they were moved to) they are not processed or counted twice;
+        -- `seen` has every other window met, for the placement check; `listed`
+        -- has the unrecognized windows already named in the summary
+        local placed, seen, listed = {}, {}, {}
 
-            local initial_space = hs.spaces.activeSpaceOnScreen(screen)
-            local screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
+        for _, screen in ipairs(screens) do
+            rs.visitSpaces(screen, function(space, item)
+                local infos = rs.getSpaceWindows(screen, nil, function(id) return placed[id] end)
+                for _, info in ipairs(infos) do
+                    info.visit_space = space
+                    table.insert(seen, info)
+                end
 
-            rs.delayExecution(rs.screen_pause)
-            for _, space in pairs(screen_spaces) do
-                local msg = "go to space: " .. space
-                msg = msg .. " on screen: " .. screen_id
-                rs.issueVerbose(msg,rs.verbose)
-                rs.gotoSpace(space)
-                rs.delayExecution(rs.space_pause)
-                
-                local space_state = {}
-                local space_windows = rs.retrieveEnvironmentEntities("windows", screen)
-                local multitab_windows = rs.list2table(rs.multitab_apps)
-                for _, window in ipairs(space_windows) do
-                    local window_state, window_id = rs.getWindowState(window)
-                    space_state[window_id] = window_state
+                rs.recognizeWindows(saved, infos, screen, space)
 
-                    if window_state["title"] == "" then
-                        local msg = "ignored (no title): "
-                        msg = msg .. "\tapp (" .. window_state["app"] .. ")"
-                        msg =  msg .. "\twindow id (" .. window_id .. ")"
-                        rs.issueVerbose(msg,rs.verbose)
-                    else
-                        if env_state[window_id] then
-                            local loaded_state = env_state[window_id]
-                            local msg = "LOADED WINDOW STATE: "
-                            msg = msg .. hs.inspect(loaded_state)
-                            rs.issueVerbose(msg,rs.verbose)
-                            rs.issueVerbose("WINDOW STATE: " .. hs.inspect(window_state),rs.verbose)
-                            --rs.setWindowState(window, loaded_state, space_map)
-                            rs.setWindowState(window, loaded_state, all_maps)
-                        else
-                            if window_state["multitab"] == true then
-                                local app = window_state["app"]
-                                local id_list = multitab_windows[app]
-                                id_list[#id_list + 1] = window_id
-                                multitab_windows[app] = id_list
-                            else
-                                local found_state = false
-                                local window_title = window_state["title"]
-                                for stored_id, stored_state in pairs(env_state) do
-                                    local stored_title = stored_state["title"]
-                                    if window_title == stored_title then
-                                        found_state = true
-                                        rs.rename_key(env_state,stored_id,window_id)
-                                        --rs.setWindowState(window, window_state, space_map)
-                                        rs.setWindowState(window, window_state, all_maps)
-                                    end
-                                end
-                                if not found_state then
-                                    local msg = "Unknown state for non-multitab app "
-                                    msg = msg.."window ID ("..window_id..") and "
-                                    msg = msg.."title ("..window_title..")"
-                                    rs.issueVerbose(msg,rs.verbose)
-                                end
-                            end
+                -- Place the windows that were recognized
+                for _, info in ipairs(infos) do
+                    local entry = info.entry
+                    if entry then
+                        placed[info.id] = true
+                        entry.window = info.window
+                        if entry.state["space_kind"] ~= "fullscreen" then
+                            entry.target = rs.getTargetSpace(entry.state, all_maps)
                         end
-                        --refineSpaceState:
-                        for app, id_list in pairs(multitab_windows) do
-                            if #id_list > 0 then
-                                local id2title = {}
-                                for _, window_id in ipairs(id_list) do
-                                    local window_state = space_state[window_id]
-                                    id2title[window_id] = window_state["title"]
-                                end
-                                local app_tabs = rs.getAppTabsInSpace(app,id2title)
-                                for window_id, window_tabs in pairs(app_tabs) do
-                                    --TODO: find a way to ignore window_id for
-                                    -- windows not in the current screen (here
-                                    -- or in applescrip)
+                        rs.issueVerbose("LOADED WINDOW STATE: " .. rs.describeState(entry.state), rs.verbose)
+                        rs.issueVerbose("WINDOW STATE: " .. rs.describeState(info.state), rs.verbose)
+                        rs.setWindowState(info.window, entry.state, entry.target)
+                    end
+                end
 
-                                    local window_matched = false
-                                    for stored_id, stored_state in pairs(env_state) do
-                                        local stored_tabs = stored_state["tabs"]
-                                        rs.delayExecution(rs.multitab_pause)
-                                        if rs.compareTabs(window_tabs,stored_tabs) then
-                                            rs.rename_key(env_state,stored_id,window_id)
-                                            --rs.setWindowState(window, window_state, space_map)
-                                            rs.setWindowState(window, stored_state, all_maps)
-                                            window_matched = true
-                                            break
-                                        end
-                                    end
-                                    if not window_matched then
-                                        local msg = "No state found for window: "..window_id
-                                        rs.issueVerbose(msg,rs.verbose)
-                                    end
-                                end
-                            end
+                -- The others stay where they are (and the summary names them), or go
+                -- to the fallback desktop of their monitor (`rs.unrecognized_windows`);
+                -- those that stay are still checked for visibility
+                local fallback = rs.unrecognized_windows == "fallback" and item.kind == "desktop"
+                    and rs.getFallbackSpace(space)
+                for _, info in ipairs(infos) do
+                    if not info.entry then
+                        if not listed[info.id] then
+                            listed[info.id] = true
+                            rs.addNote("Open windows not recognized", string.format("%s - %s",
+                                info.state["app"], rs.shortTitle(info.state["title"])))
+                        end
+                        if fallback and fallback ~= space then
+                            placed[info.id] = true
+                            local moved = rs.moveWindowToSpace(info.window, fallback)
+                            rs.issueVerbose(string.format("unrecognized window %s of '%s' %s the fallback desktop",
+                                info.id, info.state["app"], moved and "sent to" or "could not be sent to"),
+                                rs.verbose, 1)
+                        else
+                            rs.realignWindow(info.window, space)
                         end
                     end
-                    
                 end
+            end)
+        end
+
+        rs.measure("entering full screen", rs.restoreFullScreen, saved.entries, all_maps, initial)
+        rs.listMissingWindows(saved.entries)
+
+        if rs.verify_placement or rs.debug_check then
+            local success, err = pcall(rs.measure, "placement check", rs.checkPlacement, env_name, seen)
+            if not success then
+                rs.warn("the placement check failed: " .. tostring(err), "placement")
             end
-            rs.gotoSpace(initial_space)
+        end
+        pcall(rs.reportSpaceOrder, env_name)
+
+        if rs.restore_scan then
+            local success, err = pcall(rs.measure, "display scan", rs.applyScanState, env_name)
+            if not success then
+                rs.warn("the scan of the monitors could not be set: " .. tostring(err), "scan")
+            end
         end
         if rs.fallback_count > 0 then
             rs.notifyUser("fallback")
         end
-        rs.notifyUser("apply")
+        rs.notifyUser(rs.failed_count > 0 and "failed" or "apply")
     end
 
     --[[

@@ -10,8 +10,19 @@ return function(rs,hs)
             end
         end
     
+        -- Windows whose app or screen vanished (_e.g._ the app quit) are dropped.
+        -- `rs.window_selection` (internal) decides which screen a window belongs
+        -- to: "frame" (where its frame is; verified up to macOS 14) or "owner"
+        -- (the screen of its desktop; experimental, differs for windows whose
+        -- frame is outside their desktop's screen).
         local function isWindowOnScreen(window)
-            return screen == nil or window:screen() == screen
+            local window_screen = window:application() and window:screen()
+            if not window_screen then return false end
+            if screen == nil then return true end
+            if rs.window_selection == "owner" then
+                window_screen = rs.getWindowScreen(window)
+            end
+            return window_screen == screen
         end
     
         validateScreen(screen)
@@ -48,8 +59,17 @@ return function(rs,hs)
             error("Unknown entity: " .. entity)
         end
     
-        local text = "all " .. entity .. ": " .. hs.inspect(all_entities)
-        rs.issueVerbose(text, verbose)
+        if rs.getVerbosity(verbose) >= 3 then
+            local shown = all_entities
+            if entity == "windows" then
+                -- Window objects print their titles: list their IDs instead
+                shown = {}
+                for _, window in ipairs(all_entities or {}) do
+                    table.insert(shown, window:id())
+                end
+            end
+            rs.issueVerbose("all " .. entity .. ": " .. hs.inspect(shown), verbose)
+        end
     
         if not all_entities then
             all_entities = {}
@@ -110,9 +130,7 @@ return function(rs,hs)
     end
 
     rs.processEnvironment = function(save_flag)
-        local function sortByFrame(a, b)
-            return a:frame().x < b:frame().x
-        end
+
         local function listKeys(table)
             local keys_list = ""
             for key, _ in pairs(table) do
@@ -123,13 +141,21 @@ return function(rs,hs)
 
         rs.data_envs = rs.processDataInFile("read","environments")
         
-        local all_screens = rs.retrieveEnvironmentEntities("screens")
-        table.sort(all_screens, sortByFrame)
+        local all_screens = rs.getSortedScreens()
         
         local env = rs.detectEnvironment(all_screens)
         local env_exists, env_name = rs.validateEnvironment(env)
 
         if env_exists then
+            -- On `apply`, check that windows were saved for the environment
+            -- before `rebuildEnvironment` creates or removes any desktop
+            if not save_flag then
+                local saved_wins = rs.processDataInFile("read","windows") or {}
+                if not saved_wins[env_name] then
+                    error("No windows were saved for environment '" .. env_name
+                        .. "': run `save` first (no desktop was changed)")
+                end
+            end
             rs.rebuildEnvironment(env, env_name, all_screens, save_flag)
             --[[
             -- FOR TESTING ONLY:
@@ -179,36 +205,34 @@ return function(rs,hs)
             end
             env[screen_index] = {
                 ["monitor"] = screen_name,
-                ["space_map"] = space_map
+                ["space_map"] = space_map,
+                -- Kind of every space in order ("desktop"/"fullscreen"): `save`
+                -- records it, `apply` keeps the saved one (see `rebuildEnvironment`)
+                ["layout"] = rs.getLayoutKinds(screen)
             }
         end
         return env
     end
 
+    -- Whether the monitors of `env` (in order) are those of a saved environment
+    -- Returns: whether it exists, its name
     rs.validateEnvironment = function(env)
-        local env_exists = false
-        local env_name
+        local function listMonitors(entries)
+            local keys, names = {}, {}
+            for key in pairs(entries) do table.insert(keys, key) end
+            table.sort(keys)
+            for _, key in ipairs(keys) do
+                table.insert(names, entries[key]["monitor"])
+            end
+            return hs.inspect(names)
+        end
+        local current = listMonitors(env)
         for saved_name, saved_env in pairs(rs.data_envs) do
-            local saved_monitors = {}
-            for _, value in pairs(saved_env) do
-                table.insert(saved_monitors, value["monitor"])
-            end
-
-            local current_monitors = {}
-            for _, value in pairs(env) do
-                table.insert(current_monitors, value["monitor"])
-            end
-
-            local check_monitors = (
-                hs.inspect(saved_monitors) == hs.inspect(current_monitors)
-            )
-            if check_monitors then
-                env_exists = true
-                env_name = saved_name
-                break
+            if listMonitors(saved_env) == current then
+                return true, saved_name
             end
         end
-        return env_exists, env_name
+        return false, nil
     end
 
     rs.rebuildEnvironment = function(env, env_name, all_screens, save_flag)
@@ -223,6 +247,19 @@ return function(rs,hs)
             return table.unpack(all_counts)
         end
 
+        -- Keep the recorded over/underscan of each monitor (`rs.recordScan` updates
+        -- it) and, on `apply`, the saved order of the spaces (`save` records it)
+        local previous = rs.data_envs[env_name] or {}
+        for screen_index, entry in pairs(env) do
+            local old = previous[screen_index]
+            if old and old["monitor"] == entry["monitor"] then
+                entry["scan"] = old["scan"]
+                if not save_flag then
+                    entry["layout"] = old["layout"]
+                end
+            end
+        end
+
         if save_flag then
             rs.issueVerbose("Overwriting space order and map...", rs.verbose)
         else
@@ -234,28 +271,59 @@ return function(rs,hs)
                 local saved_map = saved_env[screen_index]["space_map"]
                 local n_screen, n_saved = lengthTables(screen_spaces, saved_map)
                 local close_MissionControl = false
-                while n_screen < n_saved do
+
+                -- Create the missing desktops (through another screen if this one
+                -- is at the space limit) and remove the extra ones; if macOS
+                -- refuses, the process goes on without them (see the warnings)
+                local add_err, remove_err
+                for _ = n_screen + 1, n_saved do
                     local status, err = rs.addSpaceToScreen(screen, close_MissionControl)
-                    if not status then
-                        error("Failed to add space: " .. tostring(err))
+                    if not status and rs.borrow_spaces then
+                        rs.issueVerbose("cannot add a desktop to '" .. screen:name() .. "' ("
+                            .. tostring(err) .. "); trying through another screen", rs.verbose)
+                        status, err = rs.createSpaceByMoving(screen)
                     end
-                    screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
-                    n_screen, n_saved = lengthTables(screen_spaces, saved_map)
-                end
-                while n_screen > n_saved do
-                    local last_space_id = screen_spaces[n_screen]
-                    local status, err = rs.removeSpace(last_space_id, close_MissionControl)
                     if not status then
-                        error("Failed to remove space: " .. tostring(err))
+                        add_err = err
+                        break
                     end
-                    screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
-                    n_screen, n_saved = lengthTables(screen_spaces, saved_map)
                 end
+                for position = n_screen, n_saved + 1, -1 do
+                    local status, err = rs.removeSpace(screen_spaces[position], close_MissionControl)
+                    if not status then
+                        remove_err = err
+                        break
+                    end
+                end
+                rs.closeMissionControl()
+                screen_spaces = rs.retrieveEnvironmentEntities("spaces", screen)
+                if #screen_spaces < n_saved then
+                    rs.warn(string.format(
+                        "could not create %d of the %d saved desktops of '%s' (%s); "
+                        .. "the windows of the missing ones go to its %s desktop",
+                        n_saved - #screen_spaces, n_saved, screen:name(),
+                        tostring(add_err), rs.fallback_space))
+                elseif #screen_spaces > n_saved then
+                    rs.warn(string.format(
+                        "could not remove %d extra desktops of '%s' (%s)",
+                        #screen_spaces - n_saved, screen:name(), tostring(remove_err)))
+                end
+
+                -- Map saved desktops to current ones by position; saved desktops
+                -- that could not be created share the fallback desktop
                 local screen_map = {}
                 for space_i, space in ipairs(screen_spaces) do
                     local space_index = rs.paddedToStr(space_i)
-                    local original_space = saved_map[space_index][1]
-                    screen_map[space_index] = {original_space, space}
+                    local saved_pair = saved_map[space_index]
+                    if saved_pair then
+                        screen_map[space_index] = {saved_pair[1], space}
+                    end
+                end
+                local fallback = screen_spaces[rs.fallback_space == "first" and 1 or #screen_spaces]
+                for saved_index, saved_pair in pairs(saved_map) do
+                    if fallback and not screen_map[saved_index] then
+                        screen_map[saved_index] = {saved_pair[1], fallback}
+                    end
                 end
                 env[screen_index]["space_map"] = screen_map
                 rs.issueVerbose("env: " .. hs.inspect(env), rs.verbose)
@@ -263,6 +331,14 @@ return function(rs,hs)
         end
         rs.data_envs[env_name] = env
         rs.processDataInFile("write","environments")
+    end
+
+    -- Name of the saved environment that matches the monitors connected now
+    -- (nil if there is none), without changing anything
+    rs.getEnvironmentName = function()
+        rs.data_envs = rs.processDataInFile("read","environments")
+        local exists, env_name = rs.validateEnvironment(rs.detectEnvironment(rs.getSortedScreens()))
+        return exists and env_name or nil
     end
 
 end
