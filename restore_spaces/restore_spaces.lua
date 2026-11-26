@@ -45,12 +45,15 @@ rs.mc_pause = 0.05 -- in seconds, polling interval for Mission Control
 rs.mc_settle = 0.3 -- in seconds, to let Mission Control animations settle
 rs.mc_drag_steps = 25 -- steps of the synthetic drag (single jumps are ignored)
 rs.mc_drag_pause = 0.01 -- in seconds, between drag steps
+rs.native_move_timeout = 2.0 -- verify asynchronous native moves before falling back
+rs.allow_mission_control_fallback = true -- false: leave failed native moves in place
 --TODO: mod.max_spaces = 0 (maximum number of spaces saved per screen)
 
 -- Global variables (dynamic)
 rs.data_wins = {} -- collected info for each window
 rs.data_envs = {} -- collected info for each environment
 rs.fallback_count = 0 -- windows sent to a fallback location during `apply`
+rs.failed_count = 0 -- windows whose requested move could not be completed
 
 -- Import utilities
 require('hs.restore_spaces.rs.utilities')(rs, hs)

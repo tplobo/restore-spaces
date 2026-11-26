@@ -64,12 +64,16 @@ return function(rs,hs)
     end
 
     -- Poll `predicate` until it returns a truthy value or `rs.mc_timeout` expires
-    local function waitUntil(predicate)
+    local function waitUntil(predicate, timeout)
         local waited = 0
         local value = predicate()
-        while not value and waited < rs.mc_timeout do
-            rs.delayExecution(rs.mc_pause)
-            waited = waited + rs.mc_pause
+        timeout = timeout or rs.mc_timeout
+        local interval = tonumber(rs.mc_pause)
+        if not interval or interval <= 0 then interval = 0.05 end
+        while not value and waited < timeout do
+            local delay = math.min(interval, timeout - waited)
+            rs.delayExecution(delay)
+            waited = waited + delay
             value = predicate()
         end
         return value
@@ -359,12 +363,23 @@ return function(rs,hs)
         return result, err
     end
 
-    -- Native API up to macOS 14 (verified there); from macOS 15 it reports
-    -- success without moving the window, so Mission Control is used instead
+    -- A native call may return true before the move completes, or without
+    -- moving anything at all. Inspect membership instead of trusting it or
+    -- ruling out native movement based solely on the macOS major version.
     local function moveWindow(window, space)
-        if hs.host.operatingSystemVersion().major <= 14 then
-            return hs.spaces.moveWindowToSpace(window, space)
+        local arrived = function()
+            local ok, current = pcall(hs.spaces.windowSpaces, window)
+            return ok and rs.contains(current or {}, space)
         end
+        if arrived() then return true end
+        local called, status, err = pcall(hs.spaces.moveWindowToSpace, window, space)
+        if not called then status, err = nil, status end
+        if status and waitUntil(arrived, rs.native_move_timeout) then return true end
+        if status then err = "native move did not reach space " .. tostring(space) end
+        if not rs.allow_mission_control_fallback then
+            return nil, err or "native move failed"
+        end
+        rs.issueVerbose("native window move failed (" .. tostring(err) .. "); using Mission Control", rs.verbose)
         return moveWindowViaMC(window, space)
     end
 
@@ -389,6 +404,7 @@ return function(rs,hs)
         end
         local status, err = moveWindow(window, space)
         if status then return true end
+        if not rs.allow_mission_control_fallback then return nil, err end
 
         local fallback = getFallbackSpace(space)
         local screen = getScreenByUUID(hs.spaces.spaceDisplay(space))
@@ -419,7 +435,7 @@ return function(rs,hs)
             "macOS %d.%d.%d, Hammerspoon %s, separate spaces: %s, move: %s, screens: %s",
             version.major, version.minor, version.patch, hs.processInfo.version,
             tostring(hs.spaces.screensHaveSeparateSpaces()),
-            version.major <= 14 and "native" or "Mission Control",
+            rs.allow_mission_control_fallback and "verified native, then Mission Control" or "verified native only",
             table.concat(screens, "; ")
         )
     end
@@ -450,7 +466,7 @@ return function(rs,hs)
     -- Diagnostic: tests goto/move with the focused window (needs 2+ user spaces
     -- on its screen) and dumps the Mission Control tree. Prints one report;
     -- window titles appear in it, so redact before sharing.
-    rs.testSpaceControl = function()
+    local function testSpaceControl()
         local lines = {rs.getSystemInfo()}
         local function report(text) table.insert(lines, text) end
         local function timed(label, action)
@@ -498,6 +514,10 @@ return function(rs,hs)
         if getMissionControl() then hs.spaces.closeMissionControl() end
 
         print("---- restore_spaces diagnostic ----\n" .. table.concat(lines, "\n"))
+    end
+
+    rs.testSpaceControl = function()
+        return rs.runOperation("testSpaceControl", testSpaceControl)
     end
 
 end

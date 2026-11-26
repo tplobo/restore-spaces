@@ -4,17 +4,19 @@
 return function(rs,hs)
 
     rs.saveEnvironmentState = function()
-        rs.logSystemInfo()
-        rs.processPlistConfig("create")
-        rs.getEnvironmentState()
-        rs.processPlistConfig("destroy")
+        return rs.runOperation("saveEnvironmentState", function()
+            rs.logSystemInfo()
+            rs.processPlistConfig("create")
+            rs.getEnvironmentState()
+        end, function() rs.processPlistConfig("destroy") end)
     end
 
     rs.applyEnvironmentState = function()
-        rs.logSystemInfo()
-        rs.processPlistConfig("create")
-        rs.setEnvironmentState()
-        rs.processPlistConfig("destroy")
+        return rs.runOperation("applyEnvironmentState", function()
+            rs.logSystemInfo()
+            rs.processPlistConfig("create")
+            rs.setEnvironmentState()
+        end, function() rs.processPlistConfig("destroy") end)
     end
 
     --[[
@@ -105,6 +107,7 @@ return function(rs,hs)
             error("Undefined environment name!")
         end
         rs.fallback_count = 0
+        rs.failed_count = 0
 
         --TODO: open apps if they are not open?
         --TODO: close apps if they are not saved?
@@ -236,7 +239,11 @@ return function(rs,hs)
         if rs.fallback_count > 0 then
             rs.notifyUser("fallback")
         end
-        rs.notifyUser("apply")
+        if rs.failed_count > 0 then
+            rs.notifyUser("failed")
+        else
+            rs.notifyUser("apply")
+        end
     end
 
     --[[
