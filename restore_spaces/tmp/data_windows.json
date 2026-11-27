@@ -1,19 +1,5 @@
 {
   "laptop": {
-    "77102": {
-      "multitab": false,
-      "fullscreen": "no",
-      "screen": 1,
-      "frame": {
-        "y": 44,
-        "w": 872,
-        "x": 1184,
-        "h": 500
-      },
-      "app": "Finder",
-      "title": "Baltazar",
-      "space": 884
-    },
     "93657": {
       "multitab": true,
       "fullscreen": "no",

@@ -81,7 +81,7 @@ return function(rs,hs)
             local path = rs.packagePath("tmp/data_check.json")
             local file = io.open(path, "w")
             if not file then error("could not write " .. path) end
-            file:write(hs.json.encode({environment = env_name, revision = rs.revision,
+            file:write(hs.json.encode({environment = env_name, build = rs.build,
                 time = os.date("%Y-%m-%d %H:%M:%S"), windows = records, not_found = missing}, true))
             file:close()
             rs.addNote("Debug record", "written to " .. path)

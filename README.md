@@ -46,15 +46,16 @@ spaces on MacOS.
    ```
    local restore_spaces = require 'hs.restore_spaces.restore_spaces'
 
-   -- Configure 'restore_spaces'
+   -- Configure 'restore_spaces' (the values below are the defaults)
    restore_spaces.verbose = false
+   restore_spaces.log_titles = false
    restore_spaces.min_window_visibility = 0
+   restore_spaces.restore_scan = true
 
    -- Bind hotkeys for 'restore_spaces'
    hs.hotkey.bind({"cmd", "alt", "ctrl"}, "S", restore_spaces.saveEnvironmentState)
    hs.hotkey.bind({"cmd", "alt", "ctrl"}, "A", restore_spaces.applyEnvironmentState)
    hs.hotkey.bind({"cmd", "alt", "ctrl"}, "O", restore_spaces.applyScan)
-
    ```
 
    The module is also available in the Hammerspoon console as `hs.restore_spaces`.
@@ -233,6 +234,11 @@ the public work of others. The code here is original and none was copied:
 
 ## Development
 
+To test changes quickly, run `zsh install.sh --dev`: it installs `init-dev.lua`
+(verbose console, titles in the logs, a `build` label and all the development
+hotkeys) as `~/.hammerspoon/init.lua`. Without `--dev`, the plain `init.lua` is
+installed. The options can be combined (`--dev --clean`).
+
 Following features have already been implemented:
 
 - Functionality for multiple monitors and for multiple environments (sets of
@@ -307,10 +313,10 @@ Current features under development; any help is appreciated:
    fraction of a second when it opens. It also happens with Hammerspoon not
    running, so it is not caused by this module.
 
-1. **Reordering full-screen spaces** does not work yet: the experimental
-   `probeSpaceReorder` could not move a full-screen space on macOS 27.2.1.
-   `apply` only reports the difference ("Space order" in the summary, after a
-   new `save`).
+1. **Reordering full-screen spaces** is not supported: `apply` reports the order
+   that differs ("Space order" in the summary, after a new `save`) but does not
+   change it. Moving a full-screen space through Mission Control proved
+   unreliable on macOS 27.2.1 (in one test a full-screen space disappeared).
 
 ## TODO
 
@@ -319,7 +325,7 @@ wrong and how to fix it. Ordered by severity.
 
 1. **Tab collection is the slowest part.** Cycling is kept as the fallback.
    Safari/Chrome are scripted, Firefox is read through accessibility
-   (`use_ax_tabs`; the tree of Firefox is unverified: run the tabs probe). The
+   (`use_ax_tabs`; verified for Firefox on macOS 27.2.1). The
    cycling script now restores the selected tab after every stop, stops only
    after 12 identical titles in a row, and the report lists how each window was
    read. Windows with more than `maxTabs` tabs are truncated (a warning is
@@ -327,12 +333,13 @@ wrong and how to fix it. Ordered by severity.
 
 1. **Matching windows after an app restart or reboot.** A saved window ID is
    trusted only if the app agrees and the boot time (from `kern.boottime`) is
-   the same; states saved by attempt 2 carry an inexact boot time and must be
-   saved again. Windows already placed in a run are skipped when they show up
-   again. Single-tab windows are matched by title, multi-tab windows by their
-   tabs (most alike pairs first, then the only saved window with the same title
-   if its tabs are at least `title_fallback_threshold` alike). A saved state
-   that belongs to a window that is still open can be taken by a look-alike.
+   the same; states saved by an early development build carry an inexact boot
+   time and must be saved again. Windows already placed in a run are skipped
+   when they show up again. Single-tab windows are matched by title, multi-tab
+   windows by their tabs (most alike pairs first, then the only saved window
+   with the same title if its tabs are at least `title_fallback_threshold`
+   alike). A saved state that belongs to a window that is still open can be
+   taken by a look-alike.
 
 1. **Over/underscan.** Verified on macOS 27.2.0 with a TV: the value is recorded
    and set again through `AXValue` (7964 restored). It is stored in the field
@@ -477,14 +484,14 @@ wrong and how to fix it. Ordered by severity.
 1. **Tab counts from accessibility are higher than the visible tabs.** Firefox
    gives 9 for a window with 3 tabs and 64 for one with 58 (6 more, twice).
    Recognition is not affected (both sides are read alike), but shared extras
-   make small windows look alike. `probeTabs` lists what is counted.
+   make small windows look alike.
 
 1. **Order of the spaces.** `apply` makes each full-screen space from the desktop
    that preceded it, last slot first, expecting macOS to insert the new space
    right after that desktop (unverified: see the "Space order" note of the
    summary). A full-screen space that was before the first desktop cannot be
    made that way, and desktops that were created are appended. Dragging
-   thumbnails (`probeSpaceReorder`) is still unreliable.
+   thumbnails in Mission Control is still unreliable.
 
 1. **Refactor.** Pending split: `spaces.lua` (Mission Control, moves,
    diagnostics), `plumbing.lua` (statistics, summary, realign, updates),

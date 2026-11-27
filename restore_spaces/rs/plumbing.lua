@@ -359,7 +359,7 @@ return function(rs,hs)
             end
         end
 
-        add('<p class="brand">restore_spaces ' .. escape(rs.revision or "") .. '</p>')
+        add('<p class="brand">' .. escape(rs.tagBuild("restore_spaces")) .. '</p>')
         add(string.format('<h1>%s <span class="%s">%s</span></h1>', escape(title),
             success and "ok" or "bad", success and "done" or "FAILED"))
         add(string.format('<p class="meta">%s%.1f s</p>',
@@ -542,12 +542,12 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'||e.key==='En
     end
 
     -- Run a public action (`save`/`apply`/`realign`...) between banners (which
-    -- show the attempt number), collecting its statistics and warnings and
+    -- show the build label, if any), collecting its statistics and warnings and
     -- showing the summary window at the end
     rs.runAction = function(title, action)
         rs.resetStats()
         rs.checkForUpdate()
-        rs.runWithBanner(title .. " [" .. tostring(rs.revision) .. "]", action, function(success, err, seconds)
+        rs.runWithBanner(rs.tagBuild(title), action, function(success, err, seconds)
             local reasons = {}
             for reason in pairs(rs.stats.skipped or {}) do table.insert(reasons, reason) end
             table.sort(reasons)

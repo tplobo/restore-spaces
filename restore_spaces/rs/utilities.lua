@@ -77,6 +77,13 @@ return function(rs,hs)
         print("\n" .. rs.banner(level, title))
     end
 
+    -- Text followed by the label of the development build in brackets, if there is
+    -- one (`rs.build`): "restore_spaces [build 8]"; the text alone otherwise
+    rs.tagBuild = function(text)
+        if not rs.build then return text end
+        return text .. " [" .. tostring(rs.build) .. "]"
+    end
+
     -- Run `action()` between a start and an end banner (the end one reports the
     -- elapsed time and whether it failed). `summarize(success, err, seconds)`
     -- is called after the end banner (its own errors are printed, not raised);
@@ -109,6 +116,23 @@ return function(rs,hs)
     -- Quote a string for the shell (single quotes)
     rs.shellQuote = function(text)
         return "'" .. (tostring(text):gsub("'", "'\\''")) .. "'"
+    end
+
+    -- Poll `predicate` until it returns a truthy value or the timeout expires
+    -- (`rs.mc_timeout` by default); returns its last value
+    rs.waitUntil = function(predicate, timeout)
+        timeout = timeout or rs.mc_timeout
+        local interval = tonumber(rs.mc_pause)
+        if not interval or interval <= 0 then interval = 0.05 end
+        local waited = 0
+        local value = predicate()
+        while not value and waited < timeout do
+            local delay = math.min(interval, timeout - waited)
+            rs.delayExecution(delay)
+            waited = waited + delay
+            value = predicate()
+        end
+        return value
     end
 
 end

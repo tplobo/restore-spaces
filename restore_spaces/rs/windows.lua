@@ -10,15 +10,6 @@ return function(rs,hs)
         return rs.legacy.getRecognition()[app]
     end
 
-    -- Names of the apps recognized by their tabs
-    rs.getTabApps = function()
-        local names = {}
-        for app, rule in pairs(rs.legacy.getRecognition()) do
-            if rule == "tabs" then table.insert(names, app) end
-        end
-        return names
-    end
-
     -- First title term (plain text) of an app that appears in `title`, if the app
     -- has terms
     rs.getTitleKey = function(app, title)

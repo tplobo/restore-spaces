@@ -29,9 +29,9 @@ hs.spaces = require 'hs.spaces'
 -- Initialize module `restore_spaces`
 local rs = {}
 
--- Version of the module, and number of the attempt being tested (temporary)
+-- Version of the module, and label of the development build being tested
 rs.version = "0.4.0"
-rs.revision = "attempt 8"
+rs.build = false                        -- label of a development build (_e.g._ "build 8"), shown in the console and the summary
 
 -- Global variables (defaults)
 --mod.mode = "quiet"                    -- "quiet" or "verbose"
@@ -154,6 +154,6 @@ rs.resetStats()
 -- Make the module reachable from the Hammerspoon console: hs.restore_spaces.saveScan()
 hs.restore_spaces = rs
 
-rs.printBanner(3, "restore_spaces " .. rs.revision .. " loaded")
+rs.printBanner(3, rs.tagBuild("restore_spaces") .. " loaded")
 
 return rs
